@@ -18,7 +18,7 @@
 #endif
 
 /* Number of timer ticks since OS booted. */
-static int64_t ticks;
+static int64_t os_ticks;
 
 /* Number of loops per timer tick.
    Initialized by timer_calibrate(). */
@@ -74,7 +74,7 @@ timer_calibrate (void) {
 int64_t
 timer_ticks (void) {
 	enum intr_level old_level = intr_disable ();
-	int64_t t = ticks;
+	int64_t t = os_ticks;
 	intr_set_level (old_level);
 	barrier ();
 	return t;
@@ -88,13 +88,21 @@ timer_elapsed (int64_t then) {
 }
 
 /* Suspends execution for approximately TICKS timer ticks. */
-void
-timer_sleep (int64_t ticks) {
-	int64_t start = timer_ticks ();
+void timer_sleep(int64_t ticks)
+{
+	printf("timer_sleep() called with ticks: %lld\n", ticks);
+	int64_t start = timer_ticks();
 
-	ASSERT (intr_get_level () == INTR_ON);
-	while (timer_elapsed (start) < ticks)
-		thread_yield ();
+	ASSERT(intr_get_level() == INTR_ON);
+	// while (timer_elapsed(start) < ticks)
+	// 	thread_yield();
+	// 위의 코드는 busy waiting을 하기 때문에, CPU를 낭비한다.
+	// 따라서, thread_yield()를 호출하지 않고, thread_sleep()을 호출하여
+	// 현재 스레드를 block 상태로 만들어 다른 스레드가 실행되도록 한다.
+
+	thread_sleep(os_ticks + ticks);
+
+	printf("timer_sleep() finished with ticks: %lld\n", ticks);
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -122,10 +130,16 @@ timer_print_stats (void) {
 }
 
 /* Timer interrupt handler. */
-static void
-timer_interrupt (struct intr_frame *args UNUSED) {
-	ticks++;
-	thread_tick ();
+static void timer_interrupt(struct intr_frame *args UNUSED)
+{
+	printf("timer_interrupt() called with os_ticks: %lld\n", os_ticks);
+	os_ticks++;
+	thread_tick();
+	// 만약 os_ticks >= minimum_ticks 이라면 어떠한 스레드가 꺠어나야 함을 의미한다.
+	if (os_ticks >= get_minimum_tick()) {
+		thread_wakeup(os_ticks);
+	}
+
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
@@ -133,17 +147,17 @@ timer_interrupt (struct intr_frame *args UNUSED) {
 static bool
 too_many_loops (unsigned loops) {
 	/* Wait for a timer tick. */
-	int64_t start = ticks;
-	while (ticks == start)
+	int64_t start = os_ticks;
+	while (os_ticks == start)
 		barrier ();
 
 	/* Run LOOPS loops. */
-	start = ticks;
+	start = os_ticks;
 	busy_wait (loops);
 
 	/* If the tick count changed, we iterated too long. */
 	barrier ();
-	return start != ticks;
+	return start != os_ticks;
 }
 
 /* Iterates through a simple loop LOOPS times, for implementing
