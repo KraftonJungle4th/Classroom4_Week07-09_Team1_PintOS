@@ -26,8 +26,15 @@
 
 // THREAD_READY 상태의 프로세스, 즉 실행할 준비가 되었지만 실제로 실행되지는 않은 프로세스의 리스트
 static struct list ready_list;
-// THREAD_BLOCKED 상태의 프로세스, 즉 실행할 준비가 되지 않은 프로세스의 리스트
+
+/* THREAD_BLOCKED 상태의 프로세스, 즉 실행할 준비가 되지 않은 프로세스의 리스트
+ * wakeup_tick을 기준으로 정렬한다.
+ */
 static struct list sleep_list;
+
+static long long minimum_ticks; /* Minimum Value of local tick of the threads*/
+
+#define min(a, b) ((a) < (b) ? (a) : (b))
 
 /* Idle thread.
  * idel_thread는 다른 스레드가 실행할 준비가 되지 않았을 때 실행되는 스레드이다.
@@ -114,7 +121,10 @@ void thread_init(void)
 	/* Init the globla thread context */
 	lock_init(&tid_lock);
 	list_init(&ready_list);
+	list_init(&sleep_list);
 	list_init(&destruction_req);
+
+	minimum_ticks = 1e9;
 
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread();
@@ -141,12 +151,12 @@ void thread_start(void)
 	sema_down(&idle_started);
 }
 
-/* 타이머 인터럽트 핸들러에 의해 각 타이머 틱마다 호출됩니다.
- * 따라서 이 함수는 외부 인터럽트 컨텍스트에서 실행됩니다.
+/* 타이머 인터럽트 핸들러에 의해 각 타이머 틱마다 호출된다.
+ * 따라서 이 함수는 외부 인터럽트 컨텍스트에서 실행된다.
  */
 void thread_tick(void)
 {
-	// printf("thread_tick() called\n");
+	printf("thread_tick() called with idle_ticks: %lld, kernel_ticks: %lld, user_ticks: %lld\n", idle_ticks, kernel_ticks, user_ticks);
 	struct thread *t = thread_current();
 
 	/* Update statistics. */
@@ -174,6 +184,7 @@ void thread_print_stats(void)
 /* 새로운 커널 스레드를 생성합니다. NAME은 스레드의 이름이며, PRIORITY는 스레드의 우선순위입니다.
    FUNCTION은 스레드가 실행할 함수이며, AUX는 FUNCTION에 전달할 인자입니다. 준비 큐에 스레드를 추가합니다.
    새 스레드의 스레드 식별자를 반환하거나 생성에 실패하면 TID_ERROR를 반환합니다.
+   FUNCTION이 실행되는 시점은 thread_create()가 반환된 이후입니다.
 
    thread_start()가 호출되었다면 thread_create()가 반환되기 전에 새 스레드가 예약될 수 있습니다.
    심지어 thread_create()가 반환되기 전에 종료될 수도 있습니다.
@@ -217,15 +228,13 @@ tid_t thread_create(const char *name, int priority, thread_func *function, void 
 	return tid;
 }
 
-/* Puts the current thread to sleep.  It will not be scheduled
-   again until awoken by thread_unblock().
-
-   This function must be called with interrupts turned off.  It
-   is usually a better idea to use one of the synchronization
-   primitives in synch.h. */
+/* 현재 스레드를 재운다(BLOCKED로 변경). thread_unblock()이 호출될때까지 다시 스케줄되지 않는다.
+ * 이 함수는 인터럽트가 꺼진 상태에서 호출되어야 한다.
+ * 보통 synch.h에 있는 동기화 프리미티브를 사용하는 것이 더 좋다.
+ */
 void thread_block(void)
 {
-	printf("thread_block() called -> tid: %d blocked\n", thread_current()->tid);
+	// printf("thread_block() called -> tid: %d blocked\n", thread_current()->tid);
 	ASSERT(!intr_context());
 	ASSERT(intr_get_level() == INTR_OFF);
 	thread_current()->status = THREAD_BLOCKED;
@@ -252,7 +261,7 @@ void thread_unblock(struct thread *t)
 	t->status = THREAD_READY;
 	intr_set_level(old_level);
 
-	printf("thread_unblock() called -> tid: %d unblocked\n", t->tid);
+	// printf("thread_unblock() called -> tid: %d unblocked\n", t->tid);
 }
 
 /* Returns the name of the running thread. */
@@ -605,4 +614,69 @@ static tid_t allocate_tid(void)
 	lock_release(&tid_lock);
 
 	return tid;
+}
+
+/*
+ * less_local_tick - sleep_list를 정렬하기 위한 비교 함수. list_less_func TYPEDEF로 선언되어 있다.
+ */
+bool less_local_tick(const struct list_elem *a, const struct list_elem *b, void *aux)
+{
+	struct thread *ta = list_entry(a, struct thread, elem);
+	struct thread *tb = list_entry(b, struct thread, elem);
+	return ta->wakeup_ticks < tb->wakeup_ticks;
+}
+
+/*
+ * thread_sleep - 현재 스레드가 유휴 스레드가 아닌경우 스레드를 BLOCKED 상태로 전환하고 sleep_list에 추가한다.
+ * sleep_list에는 오름차순으로 배치한다.
+ * minimum_ticks를 업데이트하고 schedule()을 호출한다.
+ * 스레드 리스트를 조작할때, 인터럽트를 비활성화하고 조작이 끝나면 다시 활성화해야 한다.
+ */
+void thread_sleep(int64_t ticks)
+{
+	struct thread *curr = thread_current();
+	enum intr_level old_level;
+
+	ASSERT(!intr_context());
+	ASSERT(curr != idle_thread);
+
+	old_level = intr_disable();
+	curr->status = THREAD_BLOCKED;
+	curr->wakeup_ticks = ticks;
+	minimum_ticks = min(minimum_ticks, ticks); // update the global tick
+	list_insert_ordered(&sleep_list, &curr->elem, (list_less_func *)less_local_tick, NULL);
+	schedule();
+	intr_set_level(old_level);
+}
+
+/*
+ * thread_wakeup - 현재 os_ticks이 minimum_ticks보다 커지면 sleep_list의 첫 번째 요소를 ready_list로 이동한다.
+ * 이 함수는 타이머 인터럽트 핸들러에서 호출된다.
+ * 따라서 이 함수는 외부 인터럽트 컨텍스트에서 실행된다.
+ * 스레드 리스트를 조작할때, 인터럽트를 비활성화하고 조작이 끝나면 다시 활성화해야 한다.
+ */
+void thread_wakeup(int64_t os_ticks)
+{
+	struct thread *t;
+	enum intr_level old_level;
+
+	// ASSERT(!intr_context());
+	// ASSERT(intr_get_level() == INTR_OFF);
+
+	old_level = intr_disable();
+
+	t = list_entry(list_front(&sleep_list), struct thread, elem);
+	list_pop_front(&sleep_list);
+	list_push_back(&ready_list, &t->elem);
+	t->status = THREAD_READY;
+	if (!list_empty(&sleep_list))
+		minimum_ticks = list_entry(list_front(&sleep_list), struct thread, elem)->wakeup_ticks;
+	else
+		minimum_ticks = 1e9;
+	intr_set_level(old_level);
+}
+
+long long get_minimum_tick(void)
+{
+	return minimum_ticks;
 }

@@ -132,9 +132,11 @@ static void test_sleep(int thread_cnt, int iterations)
   free(threads);
 }
 
-/* Sleeper thread. */
-static void
-sleeper(void *t_)
+/* Sleeper thread.
+ * 매개변수 t_는 struct sleep_thread * 형이다.
+ * 
+ */
+static void sleeper(void *t_)
 {
   struct sleep_thread *t = t_;
   struct sleep_test *test = t->test;

@@ -190,6 +190,7 @@ lock_acquire (struct lock *lock) {
 
 	sema_down (&lock->semaphore);
 	lock->holder = thread_current ();
+	// printf("lock_acquire() called by %s\n", thread_current()->tid);
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
