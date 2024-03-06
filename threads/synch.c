@@ -32,6 +32,8 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -104,13 +106,14 @@ sema_try_down (struct semaphore *sema) {
  */
 void sema_up(struct semaphore *sema)
 {
+	struct thread *t;
 	enum intr_level old_level;
 
 	ASSERT(sema != NULL);
 
 	old_level = intr_disable();
 	if (!list_empty(&sema->waiters)) {
-		struct thread *t = list_entry(list_pop_front(&sema->waiters), struct thread, elem);
+		t = list_entry(list_pop_front(&sema->waiters), struct thread, elem);
 		thread_unblock(t);
 	}
 	sema->value++;
@@ -176,23 +179,28 @@ lock_init (struct lock *lock) {
 	sema_init (&lock->semaphore, 1);
 }
 
-/* Acquires LOCK, sleeping until it becomes available if
-   necessary.  The lock must not already be held by the current
-   thread.
-
-   This function may sleep, so it must not be called within an
-   interrupt handler.  This function may be called with
-   interrupts disabled, but interrupts will be turned back on if
-   we need to sleep. */
-void
-lock_acquire (struct lock *lock) {
-	ASSERT (lock != NULL);
-	ASSERT (!intr_context ());
-	ASSERT (!lock_held_by_current_thread (lock));
-
-	sema_down (&lock->semaphore);
-	lock->holder = thread_current ();
-	// printf("lock_acquire() called by %s\n", thread_current()->tid);
+/* lock_acquire - 잠금을 획득하고 필요한 경우 잠금을 사용할 수 있을 때까지 대기한다.
+ * 잠금은 현재 스레드가 이미 보유하고 있지 않아야 한다.
+ * 
+ * 이 함수는 BLOCKED 될 수 있으므로 인터럽트 핸들러 내에서 호출해서는 안된다.
+ * 이 함수는 인터럽트가 비활성화된 상태에서 호출될 수 있지만, Sleep이 필요하면 인터럽트가 다시 활성화된다.
+ */
+void lock_acquire (struct lock *lock) {
+	ASSERT(lock != NULL);
+	ASSERT(!intr_context());
+	ASSERT(!lock_held_by_current_thread(lock));
+	// 잠금이 사용 불가하다면 저장
+	if (lock->holder != NULL) {
+		thread_current()->wait_on_lock = lock;
+		// 현재 스레드가 가진 우선순위가 잠금을 가진 스레드의 우선순위보다 크다면 기부
+		if (thread_get_priority() > lock->holder->priority) {
+			list_insert_ordered(&lock->holder->donations, &thread_current()->d_elem, (list_less_func *)&higher_priority, NULL);
+			lock->holder->priority = thread_get_priority();
+		}
+	}
+	sema_down(&lock->semaphore);
+	thread_current()->wait_on_lock = NULL;
+	lock->holder = thread_current();
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -214,17 +222,20 @@ lock_try_acquire (struct lock *lock) {
 	return success;
 }
 
-/* Releases LOCK, which must be owned by the current thread.
-   This is lock_release function.
+/* lock_release - 현재 스레드가 소유하고 있는 잠금을 해제한다.
 
    An interrupt handler cannot acquire a lock, so it does not
    make sense to try to release a lock within an interrupt
    handler. */
-void
-lock_release (struct lock *lock) {
-	ASSERT (lock != NULL);
-	ASSERT (lock_held_by_current_thread (lock));
-
+void lock_release (struct lock *lock) {
+	ASSERT(lock != NULL);
+	ASSERT(lock_held_by_current_thread(lock));
+	if (!list_empty(&lock->holder->donations)) {
+		lock->holder->priority = list_entry(list_pop_front(&lock->holder->donations), struct thread, d_elem)->priority;
+	}
+	else {
+		lock->holder->priority = lock->holder->original_priority;
+	}
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);
 }
