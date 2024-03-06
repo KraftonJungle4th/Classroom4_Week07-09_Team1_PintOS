@@ -63,7 +63,6 @@ void sema_down(struct semaphore *sema)
 
 	ASSERT(sema != NULL);
 	ASSERT(!intr_context());
-
 	old_level = intr_disable();
 	while (sema->value == 0)
 	{
@@ -113,6 +112,7 @@ void sema_up(struct semaphore *sema)
 
 	old_level = intr_disable();
 	if (!list_empty(&sema->waiters)) {
+		list_sort(&sema->waiters, (list_less_func *)&higher_priority, NULL);
 		t = list_entry(list_pop_front(&sema->waiters), struct thread, elem);
 		thread_unblock(t);
 	}
@@ -189,13 +189,20 @@ void lock_acquire (struct lock *lock) {
 	ASSERT(lock != NULL);
 	ASSERT(!intr_context());
 	ASSERT(!lock_held_by_current_thread(lock));
-	// 잠금이 사용 불가하다면 저장
 	if (lock->holder != NULL) {
 		thread_current()->wait_on_lock = lock;
-		// 현재 스레드가 가진 우선순위가 잠금을 가진 스레드의 우선순위보다 크다면 기부
+
 		if (thread_get_priority() > lock->holder->priority) {
 			list_insert_ordered(&lock->holder->donations, &thread_current()->d_elem, (list_less_func *)&higher_priority, NULL);
-			lock->holder->priority = thread_get_priority();
+			struct thread *cur = thread_current();
+			while (cur->wait_on_lock != NULL) {
+				if (cur->priority > cur->wait_on_lock->holder->priority) {
+					cur->wait_on_lock->holder->priority = cur->priority;
+					cur = cur->wait_on_lock->holder;
+				}
+				else 
+					break;
+			}
 		}
 	}
 	sema_down(&lock->semaphore);
@@ -223,19 +230,33 @@ lock_try_acquire (struct lock *lock) {
 }
 
 /* lock_release - 현재 스레드가 소유하고 있는 잠금을 해제한다.
-
-   An interrupt handler cannot acquire a lock, so it does not
-   make sense to try to release a lock within an interrupt
-   handler. */
+ * 잠금이 해제되면, 해당 잠금을 가지고 있던 스레드의 donations 리스트에서 해당 잠금을 기다리고 있던 스레드를 삭제한다.
+ * 인터럽트 핸들러는 잠금을 획득할 수 없으므로 인터럽트 핸들러 내에서 잠금을 해제하려고 시도하는 것은 의미가 없다.
+ */
 void lock_release (struct lock *lock) {
 	ASSERT(lock != NULL);
 	ASSERT(lock_held_by_current_thread(lock));
-	if (!list_empty(&lock->holder->donations)) {
-		lock->holder->priority = list_entry(list_pop_front(&lock->holder->donations), struct thread, d_elem)->priority;
+
+	struct thread *cur = lock->holder;
+	struct thread *start = list_entry(list_begin(&cur->donations), struct thread, d_elem);
+	struct thread *end = list_entry(list_end(&cur->donations), struct thread, d_elem);
+	struct thread *idx;
+	for (idx = start; idx != end; idx = list_entry(list_next(&idx->d_elem), struct thread, d_elem)) {
+		if (idx->wait_on_lock == lock) {
+			list_remove(&idx->d_elem);
+			idx->wait_on_lock = NULL;
+		}
 	}
-	else {
-		lock->holder->priority = lock->holder->original_priority;
+	if (!list_empty(&cur->donations)) {
+		struct thread *max = list_entry(list_begin(&cur->donations), struct thread, d_elem);
+		if (max->priority > cur->original_priority)
+			cur->priority = max->priority;
+		else
+			cur->priority = cur->original_priority;
 	}
+	else
+		cur->priority = cur->original_priority;
+
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);
 }
