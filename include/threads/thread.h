@@ -146,7 +146,8 @@ void do_iret (struct intr_frame *tf);
 
 void thread_sleep(int64_t ticks);
 void thread_wakeup(int64_t ticks);
-bool less_local_tick(const struct list_elem *a, const struct list_elem *b, void *aux);
+bool less_wakeup_ticks(const struct list_elem *a, const struct list_elem *b, void *aux);
+bool higher_priority(const struct list_elem *a, const struct list_elem *b, void *aux);
 long long get_minimum_tick(void);
 
 #endif /* threads/thread.h */

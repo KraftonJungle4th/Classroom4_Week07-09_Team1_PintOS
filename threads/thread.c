@@ -24,22 +24,19 @@
    Do not modify this value. */
 #define THREAD_BASIC 0xd42df210
 
-// THREAD_READY 상태의 프로세스, 즉 실행할 준비가 되었지만 실제로 실행되지는 않은 프로세스의 리스트
+/* THREAD_READY 상태의 프로세스 리스트, 즉 실행할 준비가 되었지만 실제로 실행되지는 않은 프로세스의 리스트
+ * priority를 기준으로 내림차순 정렬되어 있다.
+ */
 static struct list ready_list;
 
-/* THREAD_BLOCKED 상태의 프로세스, 즉 실행할 준비가 되지 않은 프로세스의 리스트
- * wakeup_tick을 기준으로 정렬한다.
+/* THREAD_BLOCKED 상태의 프로세스 리스트, 즉 실행할 준비가 되지 않은 프로세스의 리스트
+ * wakeup_tick을 기준으로 오름차순 정렬되어 있다.
  */
 static struct list sleep_list;
 
-static long long minimum_ticks; /* Minimum Value of local tick of the threads*/
-
-#define min(a, b) ((a) < (b) ? (a) : (b))
-
-/* Idle thread.
- * idel_thread는 다른 스레드가 실행할 준비가 되지 않았을 때 실행되는 스레드이다.
+/* idel_thread는 다른 스레드가 실행할 준비가 되지 않았을 때 실행되는 스레드이다.
  * CPU가 유휴(Idle) 상태, 즉 아무런 작업을 하지 않을 때 실행된다.
- * idel_thread는 thread_start()에서 생성된다.
+ * idel_thread는 thread_start()에서 생성되고, 우선순위는 0이다.
  */
 static struct thread *idle_thread;
 
@@ -124,8 +121,6 @@ void thread_init(void)
 	list_init(&sleep_list);
 	list_init(&destruction_req);
 
-	minimum_ticks = 1e9;
-
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread();
 	init_thread(initial_thread, "main", PRI_DEFAULT);
@@ -133,9 +128,8 @@ void thread_init(void)
 	initial_thread->tid = allocate_tid();
 }
 
-/* Starts preemptive thread scheduling by enabling interrupts.
-   Also creates the idle thread. */
-// 인터럽트를 활성화하여 프리미티브 스레드 스케줄링을 시작하고, Idle 스레드를 생성
+/* thread_start - 인터럽트를 활성화하여 프리미티브 스레드 스케줄링을 시작하고, Idle 스레드를 생성한다.
+ */
 void thread_start(void)
 {
 	printf("thread_start() called\n");
@@ -156,7 +150,6 @@ void thread_start(void)
  */
 void thread_tick(void)
 {
-	printf("thread_tick() called with idle_ticks: %lld, kernel_ticks: %lld, user_ticks: %lld\n", idle_ticks, kernel_ticks, user_ticks);
 	struct thread *t = thread_current();
 
 	/* Update statistics. */
@@ -181,20 +174,22 @@ void thread_print_stats(void)
 		   idle_ticks, kernel_ticks, user_ticks);
 }
 
-/* 새로운 커널 스레드를 생성합니다. NAME은 스레드의 이름이며, PRIORITY는 스레드의 우선순위입니다.
-   FUNCTION은 스레드가 실행할 함수이며, AUX는 FUNCTION에 전달할 인자입니다. 준비 큐에 스레드를 추가합니다.
-   새 스레드의 스레드 식별자를 반환하거나 생성에 실패하면 TID_ERROR를 반환합니다.
-   FUNCTION이 실행되는 시점은 thread_create()가 반환된 이후입니다.
+/* 새로운 커널 스레드를 생성한다. NAME은 스레드의 이름이며, PRIORITY는 스레드의 우선순위이다.
+ * FUNCTION은 스레드가 실행할 함수이며, AUX는 FUNCTION에 전달할 인자이다.
+ * 스레드를 생성하고, ready_list에 스레드를 추가한다.
+ * 새 스레드의 tid를 반환하거나 생성에 실패하면 TID_ERROR를 반환한다.
+ * FUNCTION이 실행되는 시점은 thread_create()가 반환된 이후이다.
+ *
+ * 새로 생성된 스레드와 현재 실행 중인 스레드의 우선 순위를 비교하여 현재 스레드의 우선 순위가 더 낮다면 CPU를 양보한다.
 
    thread_start()가 호출되었다면 thread_create()가 반환되기 전에 새 스레드가 예약될 수 있습니다.
    심지어 thread_create()가 반환되기 전에 종료될 수도 있습니다.
    반대로, 원래 스레드는 새 스레드가 예약되기 전에 얼마든지 실행될 수 있습니다.
    순서를 보장해야 하는 경우 세마포어 또는 다른 형태의 동기화를 사용하십시오.
-
-   제공된 코드는 새 스레드의 `priority' 멤버를 PRIORITY로 설정하지만 실제 우선순위 스케줄링은 구현되지 않습니다.
-   우선순위 스케줄링은 문제 1-3의 목표입니다. */
+   */
 tid_t thread_create(const char *name, int priority, thread_func *function, void *aux)
 {
+	enum intr_level old_level;
 	struct thread *t;
 	tid_t tid;
 
@@ -208,8 +203,6 @@ tid_t thread_create(const char *name, int priority, thread_func *function, void 
 	/* Initialize thread. */
 	init_thread(t, name, priority);
 	tid = t->tid = allocate_tid();
-
-	printf("thread_create() called -> tid: %d created\n", tid);
 
 	/* Call the kernel_thread if it scheduled.
 	 * Note) rdi is 1st argument, and rsi is 2nd argument. */
@@ -225,6 +218,12 @@ tid_t thread_create(const char *name, int priority, thread_func *function, void 
 	/* Add to run queue. */
 	thread_unblock(t);
 
+	old_level = intr_disable();
+	if (thread_current()->priority < priority)
+		thread_yield();
+
+	intr_set_level(old_level);
+
 	return tid;
 }
 
@@ -234,34 +233,28 @@ tid_t thread_create(const char *name, int priority, thread_func *function, void 
  */
 void thread_block(void)
 {
-	// printf("thread_block() called -> tid: %d blocked\n", thread_current()->tid);
 	ASSERT(!intr_context());
 	ASSERT(intr_get_level() == INTR_OFF);
 	thread_current()->status = THREAD_BLOCKED;
 	schedule();
 }
 
-/* Transitions a blocked thread T to the ready-to-run state.
-   This is an error if T is not blocked.  (Use thread_yield() to
-   make the running thread ready.)
 
-   This function does not preempt the running thread.  This can
-   be important: if the caller had disabled interrupts itself,
-   it may expect that it can atomically unblock a thread and
-   update other data. */
+/* thread_unblock - BLOCKED 스레드 t를 READY 상태로 전환하고 ready_list에 우선순위 내림차순으로 삽입한다.
+ * t가 BLOCKED 상태가 아니라면 에러이다. (running thread를 READY 상태로 전환하려면 thread_yield()를 사용하라)
+ * 이 함수는 현재 실행중인 스레드를 선점하지 않는다. 이것은 중요할 수 있다.
+ * 만약 호출자가 직접 인터럽트를 비활성화했다면, 스레드를 unblock하고 다른 데이터를 업데이트할 수 있다고 기대할 수 있다.
+ */
 void thread_unblock(struct thread *t)
 {
 	enum intr_level old_level;
-
 	ASSERT(is_thread(t));
+	ASSERT(t->status == THREAD_BLOCKED);
 
 	old_level = intr_disable();
-	ASSERT(t->status == THREAD_BLOCKED);
-	list_push_back(&ready_list, &t->elem);
+	list_insert_ordered(&ready_list, &t->elem, (list_less_func *)higher_priority, NULL);
 	t->status = THREAD_READY;
 	intr_set_level(old_level);
-
-	// printf("thread_unblock() called -> tid: %d unblocked\n", t->tid);
 }
 
 /* Returns the name of the running thread. */
@@ -311,29 +304,32 @@ void thread_exit(void)
 	NOT_REACHED();
 }
 
-/* CPU를 양보합니다.
- * 현재 스레드는 Sleep 상태로 전환되지 않으며 스케줄러의 재량에 따라 즉시 다시 스케줄될 수 있습니다.
+/* thread_yield - 현재 실행 중인 스레드가 CPU를 양보하고, ready_list에 우선순위 내림차순으로 삽입한다.
+ * 현재 스레드는 BLOCKED 상태로 전환되지 않으며 스케줄러의 재량에 따라 즉시 다시 스케줄될 수 있습니다.
+ * 만약 현재 스레드가 idle_thread라면 스케줄만 한다.
  */
 void thread_yield(void)
 {
 	struct thread *curr = thread_current();
 	enum intr_level old_level;
 
-	// printf("thread_yield() called -> tid: %d yielded\n", curr->tid);
-
 	ASSERT(!intr_context());
 
 	old_level = intr_disable();
 	if (curr != idle_thread)
-		list_push_back(&ready_list, &curr->elem);
+		list_insert_ordered(&ready_list, &curr->elem, (list_less_func *)higher_priority, NULL);
 	do_schedule(THREAD_READY);
 	intr_set_level(old_level);
 }
 
-/* Sets the current thread's priority to NEW_PRIORITY. */
+/* thread_set_priority - 현재 스레드의 우선순위를 새로운 우선순위로 설정하고,
+ * 우선순위가 낮아진다면 ready_list에서 자신보다 더 높은 우선순위를 가진 스레드가 있는지 확인하여야 한다.
+ */
 void thread_set_priority(int new_priority)
 {
 	thread_current()->priority = new_priority;
+	if (!list_empty(&ready_list) && list_entry(list_front(&ready_list), struct thread, elem)->priority > new_priority)
+		thread_yield();
 }
 
 /* Returns the current thread's priority. */
@@ -542,10 +538,10 @@ static void thread_launch(struct thread *th)
 		: : "g"(tf_cur), "g"(tf) : "memory");
 }
 
-/* 새 프로세스를 스케줄합니다. 진입시 인터럽트가 꺼져 있어야 합니다.
- * 이 함수는 현재 스레드의 상태를 status로 변경한 다음 다른 스레드를 찾아 실행합니다.
- * schedule()에서 printf()를 호출하는 것은 안전하지 않습니다.
- * 매 스케줄 실행 시마다 destruction_req 리스트에 있는 스레드를 해제합니다.
+/* do_schedule - 새 스레드를 스케줄합니다. 진입시 인터럽트가 꺼져 있어야 한다.
+ * 이 함수는 현재 스레드의 상태를 status로 변경한 다음 다른 스레드를 찾아 실행한다.
+ * schedule()에서 printf()를 호출하는 것은 안전하지 않다.
+ * 매 스케줄 실행 시마다 destruction_req 리스트에 있는 스레드를 해제한다.
  */
 static void do_schedule(int status)
 {
@@ -616,20 +612,26 @@ static tid_t allocate_tid(void)
 	return tid;
 }
 
-/*
- * less_local_tick - sleep_list를 정렬하기 위한 비교 함수. list_less_func TYPEDEF로 선언되어 있다.
+/* higher_priority - ready_list와 wait_list를 우선순위 내림차순으로 정렬하기 위한 비교 함수.
  */
-bool less_local_tick(const struct list_elem *a, const struct list_elem *b, void *aux)
+bool higher_priority(const struct list_elem *a, const struct list_elem *b, void *aux)
+{
+	struct thread *ta = list_entry(a, struct thread, elem);
+	struct thread *tb = list_entry(b, struct thread, elem);
+	return ta->priority > tb->priority;
+}
+
+/* less_wakeup_ticks - sleep_list를 정렬하기 위한 비교 함수. list_less_func typedef로 선언되어 있다.
+ */
+bool less_wakeup_ticks(const struct list_elem *a, const struct list_elem *b, void *aux)
 {
 	struct thread *ta = list_entry(a, struct thread, elem);
 	struct thread *tb = list_entry(b, struct thread, elem);
 	return ta->wakeup_ticks < tb->wakeup_ticks;
 }
 
-/*
- * thread_sleep - 현재 스레드가 유휴 스레드가 아닌경우 스레드를 BLOCKED 상태로 전환하고 sleep_list에 추가한다.
- * sleep_list에는 오름차순으로 배치한다.
- * minimum_ticks를 업데이트하고 schedule()을 호출한다.
+/* thread_sleep - 현재 스레드가 Idle 스레드가 아닌경우 thread_block()을 호출하여 현재 스레드를 BLOCKED 상태로 전환하고, schedule()을 호출한다.
+ * sleep_list에 wakeup_ticks 오름차순으로 배치한다.
  * 스레드 리스트를 조작할때, 인터럽트를 비활성화하고 조작이 끝나면 다시 활성화해야 한다.
  */
 void thread_sleep(int64_t ticks)
@@ -637,46 +639,36 @@ void thread_sleep(int64_t ticks)
 	struct thread *curr = thread_current();
 	enum intr_level old_level;
 
-	ASSERT(!intr_context());
 	ASSERT(curr != idle_thread);
 
 	old_level = intr_disable();
-	curr->status = THREAD_BLOCKED;
 	curr->wakeup_ticks = ticks;
-	minimum_ticks = min(minimum_ticks, ticks); // update the global tick
-	list_insert_ordered(&sleep_list, &curr->elem, (list_less_func *)less_local_tick, NULL);
-	schedule();
+	list_insert_ordered(&sleep_list, &curr->elem, (list_less_func *)less_wakeup_ticks, NULL);
+	thread_block();
 	intr_set_level(old_level);
 }
 
-/*
- * thread_wakeup - 현재 os_ticks이 minimum_ticks보다 커지면 sleep_list의 첫 번째 요소를 ready_list로 이동한다.
- * 이 함수는 타이머 인터럽트 핸들러에서 호출된다.
- * 따라서 이 함수는 외부 인터럽트 컨텍스트에서 실행된다.
+/* thread_wakeup - 스레드의 wakeup_ticks이 현재 os_ticks보다 작아지면 깨어나야 하므로, 스레드를 READY 상태로 만들고 ready_list로 이동한다.
+ * 이 함수는 타이머 인터럽트 핸들러에서 호출된다. 따라서 이 함수는 외부 인터럽트 컨텍스트에서 실행된다.
  * 스레드 리스트를 조작할때, 인터럽트를 비활성화하고 조작이 끝나면 다시 활성화해야 한다.
  */
 void thread_wakeup(int64_t os_ticks)
 {
+	if (list_empty(&sleep_list))
+		return;
 	struct thread *t;
 	enum intr_level old_level;
 
-	// ASSERT(!intr_context());
-	// ASSERT(intr_get_level() == INTR_OFF);
-
 	old_level = intr_disable();
+	while (!list_empty(&sleep_list))
+	{
+		t = list_entry(list_front(&sleep_list), struct thread, elem);
+		if (t->wakeup_ticks > os_ticks)
+			break;
+		list_pop_front(&sleep_list);
+		list_push_back(&ready_list, &t->elem);
+		t->status = THREAD_READY;
+	}
 
-	t = list_entry(list_front(&sleep_list), struct thread, elem);
-	list_pop_front(&sleep_list);
-	list_push_back(&ready_list, &t->elem);
-	t->status = THREAD_READY;
-	if (!list_empty(&sleep_list))
-		minimum_ticks = list_entry(list_front(&sleep_list), struct thread, elem)->wakeup_ticks;
-	else
-		minimum_ticks = 1e9;
 	intr_set_level(old_level);
-}
-
-long long get_minimum_tick(void)
-{
-	return minimum_ticks;
 }

@@ -89,22 +89,12 @@ int64_t timer_elapsed(int64_t then)
 	return timer_ticks() - then;
 }
 
-// 약 ticks 타이머 틱만큼 실행을 중지한다.
+/* timer_sleep() - 현재 스레드를 ticks만큼 BLOCKED 상태로 만들고, wakeup_tick 내림차순으로 sleep_list에 삽입한다.
+ */
 void timer_sleep(int64_t ticks)
 {
-	printf("timer_sleep() called with ticks: %lld\n", ticks);
-	int64_t start = timer_ticks();
-
 	ASSERT(intr_get_level() == INTR_ON);
-	// while (timer_elapsed(start) < ticks)
-	// 	thread_yield();
-	// 위의 코드는 busy waiting을 하기 때문에, CPU를 낭비한다.
-	// 따라서, thread_yield()를 호출하지 않고, thread_sleep()을 호출하여
-	// 현재 스레드를 block 상태로 만들어 다른 스레드가 실행되도록 한다.
-
-	thread_sleep(os_ticks + ticks);
-
-	printf("timer_sleep() finished with ticks: %lld\n", ticks);
+	thread_sleep(timer_ticks() + ticks);
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -134,17 +124,13 @@ void timer_print_stats(void)
 	printf("Timer: %" PRId64 " ticks\n", timer_ticks());
 }
 
-/* Timer interrupt handler. */
+/* timer_interrupt() - 타이머 인터럽트 핸들러
+ */
 static void timer_interrupt(struct intr_frame *args UNUSED)
 {
-	printf("timer_interrupt() called with os_ticks: %lld\n", os_ticks);
 	os_ticks++;
 	thread_tick();
-	// 만약 os_ticks >= minimum_ticks 이라면 어떠한 스레드가 꺠어나야 함을 의미한다.
-	if (os_ticks >= get_minimum_tick()) {
-		thread_wakeup(os_ticks);
-	}
-
+	thread_wakeup(os_ticks);
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
