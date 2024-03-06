@@ -104,7 +104,6 @@ static uint64_t gdt[3] = {0, 0x00af9a000000ffff, 0x00cf92000000ffff};
    finishes. */
 void thread_init(void)
 {
-	printf("thread_init() called\n");
 	ASSERT(intr_get_level() == INTR_OFF);
 
 	/* Reload the temporal gdt for the kernel
@@ -220,7 +219,7 @@ tid_t thread_create(const char *name, int priority, thread_func *function, void 
 	thread_unblock(t);
 
 	old_level = intr_disable();
-	if (thread_current()->priority < priority)
+	if (thread_get_priority() < priority)
 		thread_yield();
 
 	intr_set_level(old_level);
@@ -414,8 +413,9 @@ static void kernel_thread(thread_func *function, void *aux)
 	thread_exit(); /* If function() returns, kill the thread. */
 }
 
-/* Does basic initialization of T as a blocked thread named
-   NAME. */
+/* init_thread - 스레드 t를 name이라는 priority를 가진 BLOCKED 스레드로 초기화한다.
+ * Priority를 위한 리스트를 초기화한다.
+ */
 static void init_thread(struct thread *t, const char *name, int priority)
 {
 	ASSERT(t != NULL);
@@ -427,7 +427,9 @@ static void init_thread(struct thread *t, const char *name, int priority)
 	strlcpy(t->name, name, sizeof t->name);
 	t->tf.rsp = (uint64_t)t + PGSIZE - sizeof(void *);
 	t->priority = priority;
+	t->original_priority = priority;
 	t->magic = THREAD_MAGIC;
+	list_init(&t->donations);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
