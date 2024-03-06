@@ -49,28 +49,27 @@ sema_init (struct semaphore *sema, unsigned value) {
 	list_init (&sema->waiters);
 }
 
-/* Down or "P" operation on a semaphore.  Waits for SEMA's value
-   to become positive and then atomically decrements it.
-
-   This function may sleep, so it must not be called within an
-   interrupt handler.  This function may be called with
-   interrupts disabled, but if it sleeps then the next scheduled
-   thread will probably turn interrupts back on. This is
-   sema_down function. */
-void
-sema_down (struct semaphore *sema) {
+/* sema_down - 세마포어에 대한 Down 또는 P 연산이다.
+ * 세마포어 값이 양수가 될 때까지 기다렸다가 원자적으로 감소시킨다.
+ * 이 함수는 BLOCKED 될 수 있으므로 인터럽트 핸들러 내에서 호출해서는 안된다.
+ * 이 함수는 인터럽트가 비활성화된 상태에서 호출될 수 있지만, 
+ * BLOCKED가 발생하면 다음 스케줄링된 스레드가 인터럽트를 다시 활성화 할 수 있다.
+ */
+void sema_down(struct semaphore *sema)
+{
 	enum intr_level old_level;
 
-	ASSERT (sema != NULL);
-	ASSERT (!intr_context ());
+	ASSERT(sema != NULL);
+	ASSERT(!intr_context());
 
-	old_level = intr_disable ();
-	while (sema->value == 0) {
-		list_push_back (&sema->waiters, &thread_current ()->elem);
-		thread_block ();
+	old_level = intr_disable();
+	while (sema->value == 0)
+	{
+		list_insert_ordered(&sema->waiters, &thread_current()->elem, (list_less_func *)&higher_priority, NULL);
+		thread_block();
 	}
 	sema->value--;
-	intr_set_level (old_level);
+	intr_set_level(old_level);
 }
 
 /* Down or "P" operation on a semaphore, but only if the
@@ -98,22 +97,25 @@ sema_try_down (struct semaphore *sema) {
 	return success;
 }
 
-/* Up or "V" operation on a semaphore.  Increments SEMA's value
-   and wakes up one thread of those waiting for SEMA, if any.
-
-   This function may be called from an interrupt handler. */
-void
-sema_up (struct semaphore *sema) {
+/* sema_up - Up 또는 세마포어에서 V 연산을 수행한다.
+ * 세마포어의 값을 증가시키고, 세마포어를 기다리는 스레드 중 하나를 깨운다 (있는 경우).
+ * 현재 실행 중인 스레드가 양보하고, 스케줄링된다. 스케줄러 재량에 따라 다시 같은 스레드가 실행될 수 있다.
+ * 이 함수는 인터럽트 핸들러에서 호출될 수 있다.
+ */
+void sema_up(struct semaphore *sema)
+{
 	enum intr_level old_level;
 
-	ASSERT (sema != NULL);
+	ASSERT(sema != NULL);
 
-	old_level = intr_disable ();
-	if (!list_empty (&sema->waiters))
-		thread_unblock (list_entry (list_pop_front (&sema->waiters),
-					struct thread, elem));
+	old_level = intr_disable();
+	if (!list_empty(&sema->waiters)) {
+		struct thread *t = list_entry(list_pop_front(&sema->waiters), struct thread, elem);
+		thread_unblock(t);
+	}
 	sema->value++;
-	intr_set_level (old_level);
+	intr_set_level(old_level);
+	thread_yield();
 }
 
 static void sema_test_helper (void *sema_);
@@ -190,6 +192,7 @@ lock_acquire (struct lock *lock) {
 
 	sema_down (&lock->semaphore);
 	lock->holder = thread_current ();
+	// printf("lock_acquire() called by %s\n", thread_current()->tid);
 }
 
 /* Tries to acquires LOCK and returns true if successful or false

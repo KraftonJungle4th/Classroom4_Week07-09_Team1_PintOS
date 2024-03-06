@@ -64,44 +64,51 @@ static void print_stats(void);
 int main(void) NO_RETURN;
 
 /* Pintos main program. */
+/*
+ * main : 실제 커널의 초기화와 수행을 담당하는 함수
+ */
 int main(void)
 {
+	printf("main() called\n");
 	uint64_t mem_end;
 	char **argv;
 
-	/* Clear BSS and get machine's RAM size. */
+	/* Clear BSS and get machine's RAM size.
+	 * BSS : 초기화되지 않은 전역 변수들을 저장하는 메모리 영역
+	 */
 	bss_init();
 
-	/* Break command line into arguments and parse options. */
+	// 명령줄을 인수와 구문 분석 옵션으로 나누기
 	argv = read_command_line();
 	argv = parse_options(argv);
 
-	/* Initialize ourselves as a thread so we can use locks,
-	   then enable console locking. */
+	// 잠금을 사용할 수 있도록 스레드로 초기화한 다음 콘솔 잠금을 사용하도록 설정합니다.
 	thread_init();
 	console_init();
 
-	/* Initialize memory system. */
+	// 메모리 시스템 초기화
 	mem_end = palloc_init();
 	malloc_init();
 	paging_init(mem_end);
 
 #ifdef USERPROG
-	tss_init();
-	gdt_init();
+	tss_init(); // task state segment 초기화
+	gdt_init(); // global descriptor table 초기화
 #endif
 
-	/* Initialize interrupt handlers. */
-	intr_init();
-	timer_init();
+	// 인터럽트 핸들러 초기화
+	intr_init(); // PIC(Programmable Interrupt Controller), idt(Interrupt Descriptor Table) 초기화
+	// PIC는 인터럽트 장치에 연결되어 CPU에 인터럽트를 전달하는 역할을 한다.
+	// idt는 인터럽트가 발생했을 때 어떤 인터럽트 핸들러를 호출할지를 결정하는 테이블이다.
+	timer_init(); 
 	kbd_init();
 	input_init();
 #ifdef USERPROG
 	exception_init();
 	syscall_init();
 #endif
-	/* Start thread scheduler and enable interrupts. */
-	thread_start();
+	// 스레드 스케줄러 시작 및 인터럽트 활성화
+	thread_start(); // 가장 실행 우선 순위가 낮은 idle이라는 스레드를 생성하고 실행한다.
 	serial_init_queue();
 	timer_calibrate();
 
@@ -127,15 +134,12 @@ int main(void)
 }
 
 /* Clear BSS */
-static void
-bss_init(void)
+static void bss_init(void)
 {
-	/* The "BSS" is a segment that should be initialized to zeros.
-	   It isn't actually stored on disk or zeroed by the kernel
-	   loader, so we have to zero it ourselves.
-
-	   The start and end of the BSS segment is recorded by the
-	   linker as _start_bss and _end_bss.  See kernel.lds. */
+	/* "BSS"는 0으로 초기화해야 하는 세그먼트입니다.
+	   실제로 디스크에 저장되거나 커널 로더에 의해 0으로 초기화되지 않으므로 직접 0으로 초기화해야 합니다.
+	   BSS 세그먼트의 시작과 끝은 링커에 의해 _start_bss 및 _end_bss로 기록됩니다.  kernel.lds를 참조하세요.
+	*/
 	extern char _start_bss, _end_bss;
 	memset(&_start_bss, 0, &_end_bss - &_start_bss);
 }
@@ -143,8 +147,7 @@ bss_init(void)
 /* Populates the page table with the kernel virtual mapping,
  * and then sets up the CPU to use the new page directory.
  * Points base_pml4 to the pml4 it creates. */
-static void
-paging_init(uint64_t mem_end)
+static void paging_init(uint64_t mem_end)
 {
 	uint64_t *pml4, *pte;
 	int perm;
@@ -171,8 +174,7 @@ paging_init(uint64_t mem_end)
 
 /* Breaks the kernel command line into words and returns them as
    an argv-like array. */
-static char **
-read_command_line(void)
+static char **read_command_line(void)
 {
 	static char *argv[LOADER_ARGS_LEN / 2 + 1];
 	char *p, *end;
@@ -206,8 +208,7 @@ read_command_line(void)
 
 /* Parses options in ARGV[]
    and returns the first non-option argument. */
-static char **
-parse_options(char **argv)
+static char **parse_options(char **argv)
 {
 	for (; *argv != NULL && **argv == '-'; argv++)
 	{
@@ -241,9 +242,9 @@ parse_options(char **argv)
 }
 
 /* Runs the task specified in ARGV[1]. */
-static void
-run_task(char **argv)
+static void run_task(char **argv)
 {
+	printf("run_task() called\n");
 	const char *task = argv[1];
 
 	printf("Executing '%s':\n", task);
@@ -264,9 +265,9 @@ run_task(char **argv)
 
 /* Executes all of the actions specified in ARGV[]
    up to the null pointer sentinel. */
-static void
-run_actions(char **argv)
+static void run_actions(char **argv)
 {
+	printf("run_actions() called\n");
 	/* An action. */
 	struct action
 	{
@@ -313,8 +314,7 @@ run_actions(char **argv)
 
 /* Prints a kernel command line help message and powers off the
    machine. */
-static void
-usage(void)
+static void usage(void)
 {
 	printf("\nCommand line syntax: [OPTION...] [ACTION...]\n"
 		   "Options must precede actions.\n"
@@ -363,8 +363,7 @@ void power_off(void)
 }
 
 /* Print statistics about Pintos execution. */
-static void
-print_stats(void)
+static void print_stats(void)
 {
 	timer_print_stats();
 	thread_print_stats();

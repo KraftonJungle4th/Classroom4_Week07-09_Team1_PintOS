@@ -1,8 +1,8 @@
 {
     "files.associations": {
-        "thread.h": "c",
-        "interrupt.h": "c",
-        "vaddr.h": "c",
-        "timer.h": "c"
+        "*.html": "html",
+        "flags.h": "c",
+        "debug.h": "c",
+        "stddef.h": "c"
     }
 }
