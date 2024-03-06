@@ -3,6 +3,7 @@
         "*.html": "html",
         "flags.h": "c",
         "debug.h": "c",
-        "stddef.h": "c"
+        "stddef.h": "c",
+        "string.h": "c"
     }
 }

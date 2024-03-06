@@ -113,6 +113,8 @@ void sema_up(struct semaphore *sema)
 
 	old_level = intr_disable();
 	if (!list_empty(&sema->waiters)) {
+		// waiters에 들어있는 스레드가 donate를 받아 우선순위가 달라졌을 수 있기 때문에 재정렬
+        list_sort(&sema->waiters, (list_less_func *)&higher_priority, NULL);
 		t = list_entry(list_pop_front(&sema->waiters), struct thread, elem);
 		thread_unblock(t);
 	}
@@ -203,12 +205,10 @@ void lock_acquire (struct lock *lock) {
 	lock->holder = thread_current();
 }
 
-/* Tries to acquires LOCK and returns true if successful or false
-   on failure.  The lock must not already be held by the current
-   thread.
+/* LOCK을 획득하려고 시도하고 성공하면 참을, 실패하면 거짓을 반환합니다.
+   현재 스레드가 이미 잠금을 보유하고 있지 않아야 합니다.
 
-   This function will not sleep, so it may be called within an
-   interrupt handler. */
+   이 함수는 잠자기 상태가 아니므로 인터럽트 핸들러 내에서 호출할 수 있습니다. */
 bool
 lock_try_acquire (struct lock *lock) {
 	bool success;
@@ -224,9 +224,8 @@ lock_try_acquire (struct lock *lock) {
 
 /* lock_release - 현재 스레드가 소유하고 있는 잠금을 해제한다.
 
-   An interrupt handler cannot acquire a lock, so it does not
-   make sense to try to release a lock within an interrupt
-   handler. */
+   인터럽트 핸들러는 잠금을 획득할 수 없으므로, 
+   인터럽트 핸들러 내에서 잠금을 해제하려고 시도하는 것은 의미가 없습니다.. */
 void lock_release (struct lock *lock) {
 	ASSERT(lock != NULL);
 	ASSERT(lock_held_by_current_thread(lock));
@@ -240,9 +239,8 @@ void lock_release (struct lock *lock) {
 	sema_up (&lock->semaphore);
 }
 
-/* Returns true if the current thread holds LOCK, false
-   otherwise.  (Note that testing whether some other thread holds
-   a lock would be racy.) */
+/* 현재 스레드가 LOCK을 보유하면 참을 반환하고, 그렇지 않으면 거짓을 반환합니다.  
+(다른 스레드가 잠금을 보유하고 있는지 테스트하는 것은 느릴 수 있습니다). */
 bool
 lock_held_by_current_thread (const struct lock *lock) {
 	ASSERT (lock != NULL);
