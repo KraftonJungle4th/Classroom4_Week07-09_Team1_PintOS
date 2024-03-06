@@ -96,6 +96,12 @@ struct thread {
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 
+	/* For Priority Donation */
+	struct list donations; // For Multiple Donations
+	struct list_elem d_elem; // For Nested Donation
+	struct lock *wait_on_lock; // For Nested Donation
+	int original_priority;
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
