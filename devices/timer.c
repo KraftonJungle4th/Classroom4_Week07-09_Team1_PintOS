@@ -140,14 +140,14 @@ static bool too_many_loops(unsigned loops)
 	/* Wait for a timer tick. */
 	int64_t start = os_ticks;
 	while (os_ticks == start)
-		barrier();
+		barrier ();
 
 	/* Run LOOPS loops. */
 	start = os_ticks;
-	busy_wait(loops);
+	busy_wait (loops);
 
 	/* If the tick count changed, we iterated too long. */
-	barrier();
+	barrier ();
 	return start != os_ticks;
 }
 
