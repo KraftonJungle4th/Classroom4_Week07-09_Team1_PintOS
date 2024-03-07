@@ -4,6 +4,7 @@
         "flags.h": "c",
         "debug.h": "c",
         "stddef.h": "c",
-        "string.h": "c"
+        "string.h": "c",
+        "synch.h": "c"
     }
 }
