@@ -182,27 +182,34 @@ lock_init (struct lock *lock) {
 
 /* lock_acquire - 잠금을 획득하고 필요한 경우 잠금을 사용할 수 있을 때까지 대기한다.
  * 잠금은 현재 스레드가 이미 보유하고 있지 않아야 한다.
+ *
+ * 잠금을 획득하지 못할 경우, 해당 잠금을 wait_on_lock에 저장한다.
+ * 이후, 현재 스레드의 우선순위가 잠금을 보유하고 있는 스레드의 우선순위보다 높을 경우,
+ * 잠금을 보유하고 있는 스레드의 donations 리스트에 현재 스레드를 추가한다.
+ * 그리고 중첩 기부를 수행한다.
  * 
  * 이 함수는 BLOCKED 될 수 있으므로 인터럽트 핸들러 내에서 호출해서는 안된다.
  * 이 함수는 인터럽트가 비활성화된 상태에서 호출될 수 있지만, Sleep이 필요하면 인터럽트가 다시 활성화된다.
  */
 void lock_acquire (struct lock *lock) {
+	struct thread *t = thread_current();
+	struct thread *holder;
+	
 	ASSERT(lock != NULL);
 	ASSERT(!intr_context());
 	ASSERT(!lock_held_by_current_thread(lock));
-	if (lock->holder != NULL) {
-		thread_current()->wait_on_lock = lock;
 
+	if (lock->holder != NULL) {
+		t->wait_on_lock = lock;
 		if (thread_get_priority() > lock->holder->priority) {
-			list_insert_ordered(&lock->holder->donations, &thread_current()->d_elem, (list_less_func *)&higher_priority, NULL);
-			struct thread *cur = thread_current();
-			while (cur->wait_on_lock != NULL) {
-				if (cur->priority > cur->wait_on_lock->holder->priority) {
-					cur->wait_on_lock->holder->priority = cur->priority;
-					cur = cur->wait_on_lock->holder;
+			list_insert_ordered(&lock->holder->donations, &t->d_elem, (list_less_func *)&higher_priority, NULL);
+			while (t->wait_on_lock != NULL) {
+				holder = t->wait_on_lock->holder;
+				if (t->priority > holder->priority) {
+					holder->priority = t->priority;
+					t = holder;
 				}
-				else 
-					break;
+				else break;
 			}
 		}
 	}
@@ -229,7 +236,13 @@ lock_try_acquire (struct lock *lock) {
 }
 
 /* lock_release - 현재 스레드가 소유하고 있는 잠금을 해제한다.
- * 잠금이 해제되면, 해당 잠금을 가지고 있던 스레드의 donations 리스트에서 해당 잠금을 기다리고 있던 스레드를 삭제한다.
+ *
+ * 잠금이 해제되면, 해당 잠금을 가지고 있던 스레드의 donations 리스트에서 해당 잠금을 기다리고 있던 스레드를 삭제하고, 
+ * 잠금을 기다리고 있던 스레드의 wait_on_lock을 NULL로 설정한다.
+ * 그리고 다중 기부를 수행하기 위해 donations 리스트를 검사하여 현재 스레드의 우선순위를 재설정한다.
+ * 만약 donations 리스트가 비어있지 않다면, 현재 스레드의 우선순위를 donations 리스트의 가장 높은 우선순위로 설정하고,
+ * donations 리스트가 비어있다면, 현재 스레드의 우선순위를 원래의 우선순위로 설정한다.
+ * 
  * 인터럽트 핸들러는 잠금을 획득할 수 없으므로 인터럽트 핸들러 내에서 잠금을 해제하려고 시도하는 것은 의미가 없다.
  */
 void lock_release (struct lock *lock) {
@@ -239,19 +252,15 @@ void lock_release (struct lock *lock) {
 	struct thread *cur = lock->holder;
 	struct thread *start = list_entry(list_begin(&cur->donations), struct thread, d_elem);
 	struct thread *end = list_entry(list_end(&cur->donations), struct thread, d_elem);
-	struct thread *idx;
-	for (idx = start; idx != end; idx = list_entry(list_next(&idx->d_elem), struct thread, d_elem)) {
+	for (struct thread *idx = start; idx != end; idx = list_entry(list_next(&idx->d_elem), struct thread, d_elem)) {
 		if (idx->wait_on_lock == lock) {
 			list_remove(&idx->d_elem);
 			idx->wait_on_lock = NULL;
 		}
 	}
+
 	if (!list_empty(&cur->donations)) {
-		struct thread *max = list_entry(list_begin(&cur->donations), struct thread, d_elem);
-		if (max->priority > cur->original_priority)
-			cur->priority = max->priority;
-		else
-			cur->priority = cur->original_priority;
+		cur->priority = list_entry(list_front(&cur->donations), struct thread, d_elem)->priority;
 	}
 	else
 		cur->priority = cur->original_priority;
@@ -285,32 +294,21 @@ cond_init (struct condition *cond) {
 	list_init (&cond->waiters);
 }
 
-/* 잠금을 원자적으로 해제하고 다른 코드가 COND 신호를 보낼 때까지 기다린다.
+/* cond_wait - 잠금을 원자적으로 해제하고 다른 코드가 COND 신호를 보낼 때까지 기다린다.
  * COND가 신호를 받은 후 잠금을 다시 획득한 후 반환합니다.
  * 이 함수를 호출하기 전에 잠금을 유지해야 한다.
  * 
+ * 이 함수가 구현하는 Monitor는 "Hoare" 스타일이 아닌 "Mesa" 스타일이다.
+ * ( Mesa: 시그널을 보내거나 받는 것이 원자적인 작업이 아니다, Hoare: 시그널을 보내거나 받는 것이 원자적인 작업이다. )
+ * 즉, Signal 송수신은 원자적인 작업이 아니다. 따라서 일반적으로 호출자는 대기가 완료된 후 조건을 다시 확인하고 필요한 경우 다시 대기해야 한다.
  * 
-
-
-	메사 - 시그널을 보내거나 받는 것이 원자적인 작업이 아니다.
-	호아레 - 시그널을 보내거나 받는 것이 원자적인 작업이다.
-   The monitor implemented by this function is "Mesa" style, not
-   "Hoare" style, that is, sending and receiving a signal are not
-   an atomic operation.  Thus, typically the caller must recheck
-   the condition after the wait completes and, if necessary, wait
-   again.
-
-   A given condition variable is associated with only a single
-   lock, but one lock may be associated with any number of
-   condition variables.  That is, there is a one-to-many mapping
-   from locks to condition variables.
-
-   This function may sleep, so it must not be called within an
-   interrupt handler.  This function may be called with
-   interrupts disabled, but interrupts will be turned back on if
-   we need to sleep. */
-void
-cond_wait (struct condition *cond, struct lock *lock) {
+ * 주어진 조건 변수는 하나의 잠금에만 연결되지만, 하나의 잠금은 여러 개의 조건 변수와 연결될 수 있다.
+ * 즉, 잠금에서 조건 변수로의 1대N 매핑이 존재한다.
+ * 
+ * 이 함수는 Sleep을 할 수 있으므로 인터럽트 핸들러 내에서 호출해서는 안된다.
+ * 이 함수는 인터럽트가 비활성화된 상태에서 호출될 수 있지만, Sleep이 필요하면 인터럽트가 다시 활성화된다.
+ */
+void cond_wait (struct condition *cond, struct lock *lock) {
 	struct semaphore_elem waiter;
 
 	ASSERT (cond != NULL);
@@ -325,22 +323,21 @@ cond_wait (struct condition *cond, struct lock *lock) {
 	lock_acquire (lock);
 }
 
-/* If any threads are waiting on COND (protected by LOCK), then
-   this function signals one of them to wake up from its wait.
-   LOCK must be held before calling this function.
-
-   An interrupt handler cannot acquire a lock, so it does not
-   make sense to try to signal a condition variable within an
-   interrupt handler. */
-void
-cond_signal (struct condition *cond, struct lock *lock UNUSED) {
+/* cond_signal - COND에 대기 중인 스레드 중 하나에게 신호를 보낸다.
+ * 신호를 받은 스레드는 대기를 해제하고, 신호를 보낸 스레드가 잠금을 유지하고 있는 경우 잠금을 다시 획득한다.
+ * 
+ * 이 함수는 LOCK이 유지되어야 한다.
+ * 
+ * 인터럽트 핸들러는 잠금을 획득할 수 없으므로 인터럽트 핸들러 내에서 조건 변수를 신호로 보내는 것은 의미가 없다.
+ */
+void cond_signal (struct condition *cond, struct lock *lock UNUSED) {
 	ASSERT (cond != NULL);
 	ASSERT (lock != NULL);
 	ASSERT (!intr_context ());
 	ASSERT (lock_held_by_current_thread (lock));
 
 	if (!list_empty (&cond->waiters)) {
-		list_sort(&cond->waiters, (list_less_func *)&cmp_condvar_priority, NULL);
+		list_sort(&cond->waiters, (list_less_func *)&cond_priority, NULL);
 		sema_up (&list_entry (list_pop_front (&cond->waiters), struct semaphore_elem, elem)->semaphore);
 	}
 }
