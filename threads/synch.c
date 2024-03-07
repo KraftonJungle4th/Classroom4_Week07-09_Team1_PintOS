@@ -287,12 +287,6 @@ cond_init (struct condition *cond) {
 	list_init (&cond->waiters);
 }
 
-bool sema_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
-	struct semaphore_elem *sa = list_entry(a, struct semaphore_elem, elem);
-	struct semaphore_elem *sb = list_entry(b, struct semaphore_elem, elem);
-	
-}
-
 /* 잠금을 원자적으로 해제하고 다른 코드가 COND 신호를 보낼 때까지 기다린다.
  * COND가 신호를 받은 후 잠금을 다시 획득한 후 반환합니다.
  * 이 함수를 호출하기 전에 잠금을 유지해야 한다.
@@ -327,7 +321,7 @@ cond_wait (struct condition *cond, struct lock *lock) {
 	ASSERT (lock_held_by_current_thread (lock));
 
 	sema_init (&waiter.semaphore, 0);
-	list_push_back (&cond->waiters, &waiter.elem);
+	list_insert_ordered(&cond->waiters, &waiter.elem, (list_less_func *)&cmp_condvar_priority, NULL);
 	lock_release (lock);
 	sema_down (&waiter.semaphore);
 	lock_acquire (lock);
@@ -347,9 +341,10 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED) {
 	ASSERT (!intr_context ());
 	ASSERT (lock_held_by_current_thread (lock));
 
-	if (!list_empty (&cond->waiters))
-		sema_up (&list_entry (list_pop_front (&cond->waiters),
-					struct semaphore_elem, elem)->semaphore);
+	if (!list_empty (&cond->waiters)) {
+		list_sort(&cond->waiters, (list_less_func *)&cmp_condvar_priority, NULL);
+		sema_up (&list_entry (list_pop_front (&cond->waiters), struct semaphore_elem, elem)->semaphore);
+	}
 }
 
 /* Wakes up all threads, if any, waiting on COND (protected by
@@ -364,4 +359,13 @@ void cond_broadcast (struct condition *cond, struct lock *lock) {
 
 	while (!list_empty (&cond->waiters))
 		cond_signal (cond, lock);
+}
+
+// condition variable 우선순위 비교
+bool cmp_condvar_priority(const struct list_elem *a, const struct list_elem  *b, void *aux UNUSED) {
+    struct semaphore_elem *sema_a = list_entry(a, struct semaphore_elem, elem);
+    struct semaphore_elem *sema_b = list_entry(b, struct semaphore_elem, elem);
+    struct thread *t_a = list_entry(list_begin(&sema_a->semaphore.waiters), struct thread, elem);
+    struct thread *t_b = list_entry(list_begin(&sema_b->semaphore.waiters), struct thread, elem);
+    return t_a->priority > t_b->priority;
 }
