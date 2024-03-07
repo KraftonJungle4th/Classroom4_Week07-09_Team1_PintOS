@@ -325,7 +325,10 @@ void thread_yield(void)
  */
 void thread_set_priority(int new_priority)
 {
-	thread_current()->priority = new_priority;
+	thread_current()->original_priority = new_priority;
+	if (list_empty(&thread_current()->donations)) {
+		thread_current()->priority = new_priority;
+	}
 	if (!list_empty(&ready_list) && list_entry(list_front(&ready_list), struct thread, elem)->priority > new_priority)
 		thread_yield();
 }
@@ -613,7 +616,7 @@ static tid_t allocate_tid(void)
 	return tid;
 }
 
-/* higher_priority - ready_list와 wait_list를 우선순위 내림차순으로 정렬하기 위한 비교 함수.
+/* higher_priority - ready_list와 waiter를 우선순위 내림차순으로 정렬하기 위한 비교 함수.
  */
 bool higher_priority(const struct list_elem *a, const struct list_elem *b, void *aux)
 {
