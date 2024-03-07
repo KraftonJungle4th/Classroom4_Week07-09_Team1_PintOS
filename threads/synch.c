@@ -113,6 +113,7 @@ void sema_up(struct semaphore *sema)
 
 	old_level = intr_disable();
 	if (!list_empty(&sema->waiters)) {
+		list_sort(&sema->waiters, (list_less_func *)&higher_priority, NULL);
 		t = list_entry(list_pop_front(&sema->waiters), struct thread, elem);
 		thread_unblock(t);
 	}
@@ -195,7 +196,15 @@ void lock_acquire (struct lock *lock) {
 		// 현재 스레드가 가진 우선순위가 잠금을 가진 스레드의 우선순위보다 크다면 기부
 		if (thread_get_priority() > lock->holder->priority) {
 			list_insert_ordered(&lock->holder->donations, &thread_current()->d_elem, (list_less_func *)&higher_priority, NULL);
-			lock->holder->priority = thread_get_priority();
+			struct thread *cur = thread_current();
+			while(cur->wait_on_lock != NULL) {
+				if (cur->priority > cur->wait_on_lock->holder->priority) {
+					cur->wait_on_lock->holder->priority = cur->priority;
+					cur = cur->wait_on_lock->holder;
+				}
+				else 
+					break;
+			}
 		}
 	}
 	sema_down(&lock->semaphore);
@@ -230,8 +239,21 @@ lock_try_acquire (struct lock *lock) {
 void lock_release (struct lock *lock) {
 	ASSERT(lock != NULL);
 	ASSERT(lock_held_by_current_thread(lock));
+	
+	// 현재 스레드가 기부한 우선순위를 제거
+	struct list_elem *e = list_begin (&thread_current()->donations);
+    while (e != list_end (&thread_current()->donations)) {
+        struct thread *t = list_entry (e, struct thread, d_elem);
+        if (t->wait_on_lock == lock) {
+            e = list_remove (e);
+        } else {
+            e = list_next (e);
+        }
+    }
+
 	if (!list_empty(&lock->holder->donations)) {
-		lock->holder->priority = list_entry(list_pop_front(&lock->holder->donations), struct thread, d_elem)->priority;
+		list_sort(&thread_current()->donations, (list_less_func *)&higher_priority, NULL);
+        lock->holder->priority = list_entry(list_front(&thread_current()->donations), struct thread, d_elem)->priority;
 	}
 	else {
 		lock->holder->priority = lock->holder->original_priority;

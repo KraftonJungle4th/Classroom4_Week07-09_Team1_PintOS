@@ -131,7 +131,6 @@ void thread_init(void)
  */
 void thread_start(void)
 {
-	printf("thread_start() called\n");
 	/* Create the idle thread. */
 	struct semaphore idle_started;
 	sema_init(&idle_started, 0);
@@ -620,7 +619,14 @@ bool higher_priority(const struct list_elem *a, const struct list_elem *b, void 
 {
 	struct thread *ta = list_entry(a, struct thread, elem);
 	struct thread *tb = list_entry(b, struct thread, elem);
-	return ta->priority > tb->priority;
+	if (ta->priority > tb->priority) {
+        return true;
+    } else if (ta->priority < tb->priority) {
+        return false;
+    } else {
+        // If priorities are equal, compare thread IDs (or creation time, etc.)
+        return ta->tid < tb->tid;
+    }
 }
 
 /* less_wakeup_ticks - sleep_list를 정렬하기 위한 비교 함수. list_less_func typedef로 선언되어 있다.
