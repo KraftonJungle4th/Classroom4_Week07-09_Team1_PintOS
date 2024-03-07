@@ -287,11 +287,21 @@ cond_init (struct condition *cond) {
 	list_init (&cond->waiters);
 }
 
-/* Atomically releases LOCK and waits for COND to be signaled by
-   some other piece of code.  After COND is signaled, LOCK is
-   reacquired before returning.  LOCK must be held before calling
-   this function.
+bool sema_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
+	struct semaphore_elem *sa = list_entry(a, struct semaphore_elem, elem);
+	struct semaphore_elem *sb = list_entry(b, struct semaphore_elem, elem);
+	
+}
 
+/* 잠금을 원자적으로 해제하고 다른 코드가 COND 신호를 보낼 때까지 기다린다.
+ * COND가 신호를 받은 후 잠금을 다시 획득한 후 반환합니다.
+ * 이 함수를 호출하기 전에 잠금을 유지해야 한다.
+ * 
+ * 
+
+
+	메사 - 시그널을 보내거나 받는 것이 원자적인 작업이 아니다.
+	호아레 - 시그널을 보내거나 받는 것이 원자적인 작업이다.
    The monitor implemented by this function is "Mesa" style, not
    "Hoare" style, that is, sending and receiving a signal are not
    an atomic operation.  Thus, typically the caller must recheck
@@ -348,8 +358,7 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED) {
    An interrupt handler cannot acquire a lock, so it does not
    make sense to try to signal a condition variable within an
    interrupt handler. */
-void
-cond_broadcast (struct condition *cond, struct lock *lock) {
+void cond_broadcast (struct condition *cond, struct lock *lock) {
 	ASSERT (cond != NULL);
 	ASSERT (lock != NULL);
 
