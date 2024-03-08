@@ -101,7 +101,9 @@ struct thread {
 	struct list_elem d_elem; // For Nested Donation
 	struct lock *wait_on_lock; // For Nested Donation
 	int original_priority;
-
+	int nice;
+	int recent_cpu;
+	
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
