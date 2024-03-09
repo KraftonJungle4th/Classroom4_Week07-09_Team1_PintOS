@@ -10,6 +10,7 @@
 #include "threads/palloc.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/fixed-point.h"
 #include "intrinsic.h"
 #ifdef USERPROG
 #include "userprog/process.h"
@@ -45,6 +46,9 @@ static struct thread *initial_thread;
 
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
+
+int load_avg;
+#define F (1 << 14)
 
 /* Thread destruction requests */
 static struct list destruction_req;
@@ -120,6 +124,7 @@ void thread_init(void)
 	list_init(&sleep_list);
 	list_init(&destruction_req);
 
+	load_avg = 0;
 
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread();
@@ -307,6 +312,8 @@ void thread_exit(void)
 /* thread_yield - 현재 실행 중인 스레드가 CPU를 양보하고, ready_list에 우선순위 내림차순으로 삽입한다.
  * 현재 스레드는 BLOCKED 상태로 전환되지 않으며 스케줄러의 재량에 따라 즉시 다시 스케줄될 수 있습니다.
  * 만약 현재 스레드가 idle_thread라면 스케줄만 한다.
+ * 현재 실행중인 스레드를 ready list에 넣는다.
+ * doschedule()을 호출하여 readylist에서 스레드를 꺼내 실행한다.
  */
 void thread_yield(void)
 {
@@ -322,11 +329,16 @@ void thread_yield(void)
 	intr_set_level(old_level);
 }
 
-/* thread_set_priority - 현재 스레드의 우선순위를 새로운 우선순위로 설정하고,
+/* thread_set_priority - 현재 실행중인 스레드의 우선순위를 새로운 우선순위로 설정하고,
  * 우선순위가 낮아진다면 ready_list에서 자신보다 더 높은 우선순위를 가진 스레드가 있는지 확인하여야 한다.
+ * 만약 있다면 ready_list에 있는 스레드가 CPU를 선점하여 스케줄링을 수행한다.
  */
 void thread_set_priority(int new_priority)
 {
+	// 우선순위 설정 비활성화
+	if (thread_mlfqs)
+		return;
+
 	thread_current()->original_priority = new_priority;
 	if (list_empty(&thread_current()->donations)) {
 		thread_current()->priority = new_priority;
@@ -354,12 +366,6 @@ int thread_get_nice(void)
 	return 0;
 }
 
-/* Returns 100 times the system load average. */
-int thread_get_load_avg(void)
-{
-	/* TODO: Your implementation goes here */
-	return 0;
-}
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int thread_get_recent_cpu(void)
@@ -432,6 +438,10 @@ static void init_thread(struct thread *t, const char *name, int priority)
 	t->priority = priority;
 	t->original_priority = priority;
 	t->magic = THREAD_MAGIC;
+
+	t->recent_cpu = 0;
+	t->nice = 0;
+
 	list_init(&t->donations);
 }
 
@@ -677,4 +687,24 @@ void thread_wakeup(int64_t os_ticks)
 	}
 
 	intr_set_level(old_level);
+}
+
+/* Returns 100 times the system load average. */
+int thread_get_load_avg(void)
+{
+
+	return convert_to_integer_towards_nearest(multiply_fixed_point(load_avg, convert_to_fixed_point(100)));
+	
+}
+//2.75 2진수  10.11 10.11 * 2^14 =101100000000000
+
+void calculate_load_avg(void)
+{
+	int ready_threads = list_size(&ready_list);
+	if(thread_current()!=idle_thread){
+		ready_threads++;
+	}
+
+	load_avg = add_fixed_point( multiply_fixed_point(divide_fixed_point(convert_to_fixed_point(59), convert_to_fixed_point(60)), load_avg),
+						multiply_fixed_point_integer(divide_fixed_point(convert_to_fixed_point(1), convert_to_fixed_point(60)), ready_threads));
 }

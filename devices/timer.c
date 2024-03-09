@@ -133,6 +133,11 @@ timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
 	thread_tick ();		// 실행 중인 프로세스의 CPU 사용량을 업데이트 
 	thread_wakeup(ticks);
+
+	// timer_ticks 는 10ms 마다 호출되므로 10ms 마다 load_avg를 업데이트
+	if(timer_ticks()%TIMER_FREQ==0)
+		calculate_load_avg();
+		
 	/*
 	"대기(sleep) 리스트와 전역 틱(global tick)을 확인하고, 
 	깨울 스레드가 있는지 찾아라. 
