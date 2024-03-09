@@ -45,7 +45,6 @@ static const char *test_name;
 /* Runs the test named NAME. */
 void run_test(const char *name)
 {
-  printf("run_test() called\n");
   const struct test *t;
 
   for (t = tests; t < tests + sizeof tests / sizeof *tests; t++)
