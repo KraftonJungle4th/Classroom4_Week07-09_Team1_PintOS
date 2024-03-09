@@ -7,6 +7,7 @@
 #include "threads/io.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
+#include "threads/fixed-point.h"
 
 /* See [8254] for hardware details of the 8254 timer chip. */
 
@@ -34,7 +35,6 @@ static void real_time_sleep(int64_t num, int32_t denom);
    corresponding interrupt. */
 void timer_init(void)
 {
-	printf("timer_init() called\n");
 	/* 8254 input frequency divided by TIMER_FREQ, rounded to
 	   nearest. */
 	uint16_t count = (1193180 + TIMER_FREQ / 2) / TIMER_FREQ;
@@ -124,16 +124,24 @@ void timer_print_stats(void)
 	printf("Timer: %" PRId64 " ticks\n", timer_ticks());
 }
 
-/* timer_interrupt() - 타이머 인터럽트 핸들러. 10ms당 한 번씩 호출
+/* timer_interrupt() - 타이머 인터럽트 핸들러. 10ms당 한 번씩 호출. 1초에 100번 호출
  */
 static void timer_interrupt(struct intr_frame *args UNUSED)
 {
 	os_ticks++;
 	thread_tick();
 	thread_wakeup(os_ticks);
+
+	if (!thread_mlfqs)
+		return;
+
 	if (timer_ticks() % TIMER_FREQ == 0) {
 		calculate_load_avg();
+		// calculate_recent_cpu();
 	}
+	if (timer_ticks() % 4 == 0)
+		recalculate_priority();
+	// thread_current()->recent_cpu = add_fixed_point_integer(thread_current()->recent_cpu, 1);
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

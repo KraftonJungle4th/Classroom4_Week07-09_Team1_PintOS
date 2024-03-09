@@ -105,6 +105,7 @@ struct thread {
 	/* For MLFQS */
 	int nice;
 	int recent_cpu;
+	struct list_elem a_elem; // all_list를 위한 list_elem
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */

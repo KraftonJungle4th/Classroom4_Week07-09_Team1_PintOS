@@ -69,7 +69,6 @@ int main(void) NO_RETURN;
  */
 int main(void)
 {
-	printf("main() called\n");
 	uint64_t mem_end;
 	char **argv;
 
@@ -244,7 +243,6 @@ static char **parse_options(char **argv)
 /* Runs the task specified in ARGV[1]. */
 static void run_task(char **argv)
 {
-	printf("run_task() called\n");
 	const char *task = argv[1];
 
 	printf("Executing '%s':\n", task);
@@ -267,7 +265,6 @@ static void run_task(char **argv)
    up to the null pointer sentinel. */
 static void run_actions(char **argv)
 {
-	printf("run_actions() called\n");
 	/* An action. */
 	struct action
 	{
