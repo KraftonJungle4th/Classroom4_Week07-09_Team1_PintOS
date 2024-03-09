@@ -421,9 +421,9 @@ void calculate_recent_cpu(void)
 		t = list_entry(e, struct thread, a_elem);
 		if (t != idle_thread)
 		{
-			// int decay = divide_fixed_point(multiply_fixed_point_integer(load_avg, 2), add_fixed_point_integer(multiply_fixed_point_integer(load_avg, 2), 1));
-			// int _recent_cpu = add_fixed_point_integer(multiply_fixed_point(decay, t->recent_cpu), t->nice);
-			int _recent_cpu = add_fixed_point_integer(multiply_fixed_point(divide_fixed_point(multiply_fixed_point_integer(load_avg, 2), add_fixed_point_integer(multiply_fixed_point_integer(load_avg, 2), 1)), t->recent_cpu), t->nice);
+			int decay = divide_fixed_point(multiply_fixed_point_integer(load_avg, 2), add_fixed_point_integer(multiply_fixed_point_integer(load_avg, 2), 1));
+			int _recent_cpu = add_fixed_point_integer(multiply_fixed_point(decay, t->recent_cpu), t->nice);
+			// int _recent_cpu = add_fixed_point_integer(multiply_fixed_point(divide_fixed_point(multiply_fixed_point_integer(load_avg, 2), add_fixed_point_integer(multiply_fixed_point_integer(load_avg, 2), 1)), t->recent_cpu), t->nice);
 			t->recent_cpu = _recent_cpu;
 		}
 	}
@@ -740,7 +740,6 @@ void thread_sleep(int64_t ticks)
 	old_level = intr_disable();
 	curr->wakeup_ticks = ticks;
 	list_insert_ordered(&sleep_list, &curr->elem, (list_less_func *)less_wakeup_ticks, NULL);
-	// printf("thread sleep %d\n", curr->priority);
 	thread_block();
 	intr_set_level(old_level);
 }
@@ -764,7 +763,6 @@ void thread_wakeup(int64_t os_ticks)
 			break;
 		// printf("thread wakeup p: %d / recent_cpu: %d\n", t->priority, convert_to_integer_towards_nearest(t->recent_cpu));
 		list_pop_front(&sleep_list);
-		// list_push_back(&ready_list, &t->elem);
 		list_insert_ordered(&ready_list, &t->elem, (list_less_func *)higher_priority, NULL);
 		t->status = THREAD_READY;
 
