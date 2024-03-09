@@ -352,9 +352,10 @@ int thread_get_priority(void)
 }
 
 /* Sets the current thread's nice value to NICE. */
-void thread_set_nice(int nice UNUSED)
+void thread_set_nice(int input_nice)
 {
 	/* TODO: Your implementation goes here */
+	thread_current()->nice = input_nice;
 }
 
 /* Returns the current thread's nice value. */
@@ -376,10 +377,6 @@ int thread_get_load_avg(void)
 int thread_get_recent_cpu(void)
 {
 	/* TODO: Your implementation goes here */
-	
-	load_avg = add_fixed_point (multiply_fixed_point (divide_fixed_point (convert_to_fixed_point (59), convert_to_fixed_point (60)), load_avg), 
-             multiply_fixed_point_integer (divide_fixed_point (convert_to_fixed_point (1), convert_to_fixed_point (60)), &ready_list));
-	
 	return 0;
 }
 
