@@ -90,7 +90,7 @@ struct thread {
 	tid_t tid;                          /* Thread identifier. */
 	enum thread_status status;          /* Thread state. */
 	char name[16];                      /* Name (for debugging purposes). */
-	int priority;                       /* Priority. */
+	unsigned int priority;                       /* Priority. */
 	int64_t wakeup_ticks;                /* Time to wake up. */
 
 	/* Shared between thread.c and synch.c. */
@@ -98,15 +98,17 @@ struct thread {
 
 	/* For Priority Donation */
 
-
 	struct list donations; // 해당 스레드에게 기부를 해준 스레드
 	struct list_elem d_elem; // donations 리스트를 위한 list_elem
 	struct lock *wait_on_lock; // 기다리고 있는 잠금
 	int original_priority; // 기부를 받기 전의 기존 우선순위
-	
+
+	struct list_elem allelem;           /* List element for all threads list. */
+
 	/* For MLFQS */
 	int nice;
 	int recent_cpu;
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
@@ -146,6 +148,8 @@ void thread_exit (void) NO_RETURN;
 void thread_yield (void);
 
 void calculate_load_avg(void);
+void calculate_recent_cpu(void);
+void recalculate_all_priority(void);
 
 int thread_get_priority (void);
 void thread_set_priority (int);

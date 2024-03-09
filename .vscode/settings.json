@@ -5,6 +5,8 @@
         "debug.h": "c",
         "stddef.h": "c",
         "string.h": "c",
-        "synch.h": "c"
+        "synch.h": "c",
+        "fixed-point.h": "c",
+        "intr-stubs.h": "c"
     }
 }

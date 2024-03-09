@@ -17,6 +17,8 @@
 #error TIMER_FREQ <= 1000 recommended
 #endif
 
+#define TIME_SLICE 4
+
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
 
@@ -134,10 +136,21 @@ timer_interrupt (struct intr_frame *args UNUSED) {
 	thread_tick ();		// 실행 중인 프로세스의 CPU 사용량을 업데이트 
 	thread_wakeup(ticks);
 
-	// timer_ticks 는 10ms 마다 호출되므로 10ms 마다 load_avg를 업데이트
-	if(timer_ticks()%TIMER_FREQ==0)
-		calculate_load_avg();
-		
+
+	if(thread_mlfqs){
+		//thread_current()->recent_cpu+= 1 * 1<<14;
+	
+		// timer_ticks 는 10ms 마다 호출되므로 10ms 마다 load_avg를 업데이트
+		// 1초 마다 계산
+		//if(timer_ticks()%TIME_SLICE == 0){
+		//	recalculate_all_priority();
+		if(timer_ticks()%TIMER_FREQ==0){
+			calculate_load_avg();
+		//		calculate_recent_cpu();
+			}
+		//}
+	}
+	
 	/*
 	"대기(sleep) 리스트와 전역 틱(global tick)을 확인하고, 
 	깨울 스레드가 있는지 찾아라. 
