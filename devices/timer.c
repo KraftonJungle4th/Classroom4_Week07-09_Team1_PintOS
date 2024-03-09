@@ -124,13 +124,16 @@ void timer_print_stats(void)
 	printf("Timer: %" PRId64 " ticks\n", timer_ticks());
 }
 
-/* timer_interrupt() - 타이머 인터럽트 핸들러
+/* timer_interrupt() - 타이머 인터럽트 핸들러. 10ms당 한 번씩 호출
  */
 static void timer_interrupt(struct intr_frame *args UNUSED)
 {
 	os_ticks++;
 	thread_tick();
 	thread_wakeup(os_ticks);
+	if (timer_ticks() % TIMER_FREQ == 0) {
+		calculate_load_avg();
+	}
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

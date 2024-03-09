@@ -10,6 +10,7 @@
 #include "threads/palloc.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/fixed-point.h"
 #include "intrinsic.h"
 #ifdef USERPROG
 #include "userprog/process.h"
@@ -62,6 +63,10 @@ static unsigned thread_ticks; /* # of timer ticks since last yield. */
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
+
+/* load_avg - 시스템의 load_avg * 2^14(F)을 저장한다.
+ */
+int load_avg;
 
 static void kernel_thread(thread_func *, void *aux);
 
@@ -119,7 +124,7 @@ void thread_init(void)
 	list_init(&ready_list);
 	list_init(&sleep_list);
 	list_init(&destruction_req);
-
+	load_avg = 0;
 
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread();
@@ -239,7 +244,6 @@ void thread_block(void)
 	schedule();
 }
 
-
 /* thread_unblock - BLOCKED 스레드 t를 READY 상태로 전환하고 ready_list에 우선순위 내림차순으로 삽입한다.
  * t가 BLOCKED 상태가 아니라면 에러이다. (running thread를 READY 상태로 전환하려면 thread_yield()를 사용하라)
  * 이 함수는 현재 실행중인 스레드를 선점하지 않는다. 이것은 중요할 수 있다.
@@ -324,11 +328,15 @@ void thread_yield(void)
 
 /* thread_set_priority - 현재 스레드의 우선순위를 새로운 우선순위로 설정하고,
  * 우선순위가 낮아진다면 ready_list에서 자신보다 더 높은 우선순위를 가진 스레드가 있는지 확인하여야 한다.
+ * 고급 스케줄러를 사용하는 경우에는 이 함수를 사용하지 않는다.
  */
 void thread_set_priority(int new_priority)
 {
+	if (thread_mlfqs)
+		return;
 	thread_current()->original_priority = new_priority;
-	if (list_empty(&thread_current()->donations)) {
+	if (list_empty(&thread_current()->donations))
+	{
 		thread_current()->priority = new_priority;
 	}
 	if (!list_empty(&ready_list) && list_entry(list_front(&ready_list), struct thread, elem)->priority > new_priority)
@@ -354,11 +362,12 @@ int thread_get_nice(void)
 	return 0;
 }
 
-/* Returns 100 times the system load average. */
+/* thread_get_load_avg - 시스템의 load_avg * 100을 반환한다.
+ */
 int thread_get_load_avg(void)
 {
-	/* TODO: Your implementation goes here */
-	return 0;
+	// round to the nearest integer
+	return convert_to_integer_towards_nearest(multiply_fixed_point(load_avg, convert_to_fixed_point(100)));
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
@@ -366,6 +375,17 @@ int thread_get_recent_cpu(void)
 {
 	/* TODO: Your implementation goes here */
 	return 0;
+}
+
+/* calculate_load_avg - load_avg를 계산한다.
+ */
+void calculate_load_avg(void)
+{
+	int ready_threads = list_size(&ready_list);
+	if (thread_current() != idle_thread)
+		ready_threads++;
+	load_avg = add_fixed_point (multiply_fixed_point (divide_fixed_point (convert_to_fixed_point (59), convert_to_fixed_point (60)), load_avg),
+                     multiply_fixed_point_integer (divide_fixed_point (convert_to_fixed_point (1), convert_to_fixed_point (60)), ready_threads));
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -431,6 +451,8 @@ static void init_thread(struct thread *t, const char *name, int priority)
 	t->tf.rsp = (uint64_t)t + PGSIZE - sizeof(void *);
 	t->priority = priority;
 	t->original_priority = priority;
+	t->nice = 0;
+	t->recent_cpu = 0;
 	t->magic = THREAD_MAGIC;
 	list_init(&t->donations);
 }
