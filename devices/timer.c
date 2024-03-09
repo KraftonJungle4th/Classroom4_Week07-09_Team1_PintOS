@@ -139,8 +139,8 @@ static void timer_interrupt(struct intr_frame *args UNUSED)
 		calculate_load_avg();
 		// calculate_recent_cpu();
 	}
-	if (timer_ticks() % 4 == 0)
-		recalculate_priority();
+	// if (timer_ticks() % 4 == 0)
+	// 	recalculate_priority();
 	// thread_current()->recent_cpu = add_fixed_point_integer(thread_current()->recent_cpu, 1);
 }
 

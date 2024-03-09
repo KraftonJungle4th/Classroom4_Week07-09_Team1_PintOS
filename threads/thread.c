@@ -401,7 +401,7 @@ int thread_get_recent_cpu(void)
 void calculate_load_avg(void)
 {
 	int ready_threads = list_size(&ready_list);
-	printf("ready_threads: %d\n", ready_threads);
+	// printf("ready_threads: %d\n", ready_threads);
 	if (thread_current() != idle_thread)
 		ready_threads++;
 	load_avg = add_fixed_point(multiply_fixed_point(divide_fixed_point_integer(convert_to_fixed_point(59), 60), load_avg),
@@ -762,9 +762,10 @@ void thread_wakeup(int64_t os_ticks)
 		t = list_entry(list_front(&sleep_list), struct thread, elem);
 		if (t->wakeup_ticks > os_ticks)
 			break;
-		printf("thread wakeup p: %d / recent_cpu: %d\n", t->priority, convert_to_integer_towards_nearest(t->recent_cpu));
+		// printf("thread wakeup p: %d / recent_cpu: %d\n", t->priority, convert_to_integer_towards_nearest(t->recent_cpu));
 		list_pop_front(&sleep_list);
-		list_push_back(&ready_list, &t->elem);
+		// list_push_back(&ready_list, &t->elem);
+		list_insert_ordered(&ready_list, &t->elem, (list_less_func *)higher_priority, NULL);
 		t->status = THREAD_READY;
 
 	}
