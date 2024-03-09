@@ -33,6 +33,7 @@
 #include "threads/thread.h"
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
@@ -201,7 +202,7 @@ void lock_acquire (struct lock *lock) {
 
 	if (lock->holder != NULL) {
 		t->wait_on_lock = lock;
-		if(!thread_mlfqs){
+		if (!thread_mlfqs) {
 			if (thread_get_priority() > lock->holder->priority) {
 				list_insert_ordered(&lock->holder->donations, &t->d_elem, (list_less_func *)&higher_priority, NULL);
 				while (t->wait_on_lock != NULL) {
@@ -261,13 +262,13 @@ void lock_release (struct lock *lock) {
 		}
 	}
 
-	if(thread_mlfqs == false){
+	if (!thread_mlfqs) {
 		if (!list_empty(&cur->donations)) {
 			cur->priority = list_entry(list_front(&cur->donations), struct thread, d_elem)->priority;
 		}
 		else
 			cur->priority = cur->original_priority;
-	}	
+	}
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);
 }
