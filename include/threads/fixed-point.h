@@ -1,4 +1,3 @@
-
 #define F (1 << 14) // 2^14 = 16384
 #define convert_to_fixed_point(n) (n * F)
 #define convert_to_integer_towards_zero(x) (x / F)
