@@ -101,6 +101,8 @@ struct thread {
 	struct list_elem d_elem; // For Nested Donation
 	struct lock *wait_on_lock; // For Nested Donation
 	int original_priority;
+	int nice;	// For Advanced Scheduler, mlfqs-load-1
+	int recent_cpu;	// For Advanced Scheduler, mlfqs-load-1
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */

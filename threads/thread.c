@@ -72,6 +72,8 @@ static void do_schedule(int status);
 static void schedule(void);
 static tid_t allocate_tid(void);
 
+int load_avg;
+
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
 
@@ -125,6 +127,7 @@ void thread_init(void)
 	init_thread(initial_thread, "main", PRI_DEFAULT);
 	initial_thread->status = THREAD_RUNNING;
 	initial_thread->tid = allocate_tid();
+	load_avg = 0;
 }
 
 /* thread_start - 인터럽트를 활성화하여 프리미티브 스레드 스케줄링을 시작하고, Idle 스레드를 생성한다.
@@ -356,13 +359,16 @@ int thread_get_nice(void)
 int thread_get_load_avg(void)
 {
 	/* TODO: Your implementation goes here */
-	return 0;
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int thread_get_recent_cpu(void)
 {
 	/* TODO: Your implementation goes here */
+	
+	load_avg = add_fixed_point (multiply_fixed_point (divide_fixed_point (convert_to_fixed_point (59), convert_to_fixed_point (60)), load_avg), 
+             multiply_fixed_point_integer (divide_fixed_point (convert_to_fixed_point (1), convert_to_fixed_point (60)), &ready_list));
+	
 	return 0;
 }
 
@@ -431,6 +437,8 @@ static void init_thread(struct thread *t, const char *name, int priority)
 	t->original_priority = priority;
 	t->magic = THREAD_MAGIC;
 	list_init(&t->donations);
+	t->nice = 0;	// For Advanced Scheduler, mlfqs-load-1
+	t->recent_cpu = 0;	// For Advanced Scheduler, mlfqs-load-1
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
