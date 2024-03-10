@@ -253,23 +253,24 @@ void lock_release (struct lock *lock) {
 	ASSERT(lock != NULL);
 	ASSERT(lock_held_by_current_thread(lock));
 
-	struct thread *cur = lock->holder;
-	struct thread *start = list_entry(list_begin(&cur->donations), struct thread, d_elem);
-	struct thread *end = list_entry(list_end(&cur->donations), struct thread, d_elem);
-	for (struct thread *idx = start; idx != end; idx = list_entry(list_next(&idx->d_elem), struct thread, d_elem)) {
-		if (idx->wait_on_lock == lock) {
-			list_remove(&idx->d_elem);
-			idx->wait_on_lock = NULL;
+	struct thread *lock_holder = lock->holder;
+	struct list_elem *e;
+	struct thread *t;
+
+	for (e = list_begin(&lock->holder->donations); e != list_end(&lock->holder->donations); e = list_next(e)) {
+		t = list_entry(e, struct thread, d_elem);
+		if (t->wait_on_lock == lock) {
+			list_remove(e);
+			t->wait_on_lock = NULL;
 		}
 	}
 
-	if (!thread_mlfqs) {
-		if (!list_empty(&cur->donations)) {
-			cur->priority = list_entry(list_front(&cur->donations), struct thread, d_elem)->priority;
-		}
-		else
-			cur->priority = cur->original_priority;
+	if (thread_mlfqs) return;
+	if (!list_empty(&lock_holder->donations)) {
+		lock_holder->priority = list_entry(list_front(&lock_holder->donations), struct thread, d_elem)->priority;
 	}
+	else
+		lock_holder->priority = lock_holder->original_priority;
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);
 }
