@@ -103,9 +103,9 @@ struct thread {
 	int original_priority; // 기부를 받기 전의 기존 우선순위
 
 	/* For MLFQS */
+	struct list_elem a_elem; // all_list를 위한 list_elem
 	int nice;
 	int recent_cpu;
-	struct list_elem a_elem; // all_list를 위한 list_elem
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -160,6 +160,11 @@ void thread_wakeup(int64_t ticks);
 bool less_wakeup_ticks(const struct list_elem *a, const struct list_elem *b, void *aux);
 bool higher_priority(const struct list_elem *a, const struct list_elem *b, void *aux);
 
-long long get_minimum_tick(void);
+void calculate_load_avg(void);
+void calculate_all_recent_cpu(void);
+int calculate_one_recent_cpu(struct thread *t);
+void recent_cpu_plus(void);
+void calculate_all_priority(void);
+int calculate_one_priority(struct thread *t);
 
 #endif /* threads/thread.h */

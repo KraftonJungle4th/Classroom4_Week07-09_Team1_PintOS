@@ -190,6 +190,8 @@ lock_init (struct lock *lock) {
  * 
  * 이 함수는 BLOCKED 될 수 있으므로 인터럽트 핸들러 내에서 호출해서는 안된다.
  * 이 함수는 인터럽트가 비활성화된 상태에서 호출될 수 있지만, Sleep이 필요하면 인터럽트가 다시 활성화된다.
+ * 
+ * 고급 스케줄러 사용 시 우선순위 기부를 비활성화한다.
  */
 void lock_acquire (struct lock *lock) {
 	struct thread *t = thread_current();
@@ -201,17 +203,15 @@ void lock_acquire (struct lock *lock) {
 
 	if (lock->holder != NULL) {
 		t->wait_on_lock = lock;
-		if (!thread_mlfqs) {
-			if (thread_get_priority() > lock->holder->priority) {
-				list_insert_ordered(&lock->holder->donations, &t->d_elem, (list_less_func *)&higher_priority, NULL);
-				while (t->wait_on_lock != NULL) {
-					holder = t->wait_on_lock->holder;
-					if (t->priority > holder->priority) {
-						holder->priority = t->priority;
-						t = holder;
-					}
-					else break;
+		if (thread_get_priority() > lock->holder->priority && !thread_mlfqs) {
+			list_insert_ordered(&lock->holder->donations, &t->d_elem, (list_less_func *)&higher_priority, NULL);
+			while (t->wait_on_lock != NULL) {
+				holder = t->wait_on_lock->holder;
+				if (t->priority > holder->priority) {
+					holder->priority = t->priority;
+					t = holder;
 				}
+				else break;
 			}
 		}
 	}
@@ -248,27 +248,31 @@ lock_try_acquire (struct lock *lock) {
  * donations 리스트가 비어있다면, 현재 스레드의 우선순위를 원래의 우선순위로 설정한다.
  * 
  * 인터럽트 핸들러는 잠금을 획득할 수 없으므로 인터럽트 핸들러 내에서 잠금을 해제하려고 시도하는 것은 의미가 없다.
+ * 
+ * 고급 스케줄러 사용 시 우선순위 기부를 비활성화한다.
  */
 void lock_release (struct lock *lock) {
 	ASSERT(lock != NULL);
 	ASSERT(lock_held_by_current_thread(lock));
 
-	struct thread *cur = lock->holder;
-	struct thread *start = list_entry(list_begin(&cur->donations), struct thread, d_elem);
-	struct thread *end = list_entry(list_end(&cur->donations), struct thread, d_elem);
-	for (struct thread *idx = start; idx != end; idx = list_entry(list_next(&idx->d_elem), struct thread, d_elem)) {
-		if (idx->wait_on_lock == lock) {
-			list_remove(&idx->d_elem);
-			idx->wait_on_lock = NULL;
+	struct thread *lock_holder = lock->holder;
+	struct thread *t;
+	struct list_elem *e;
+
+	for (e = list_begin(&lock->holder->donations); e != list_end(&lock->holder->donations); e = list_next(e)) {
+		t = list_entry(e, struct thread, d_elem);
+		if (t->wait_on_lock == lock) {
+			list_remove(e);
+			t->wait_on_lock = NULL;
 		}
 	}
 
 	if (!thread_mlfqs) {
-		if (!list_empty(&cur->donations)) {
-			cur->priority = list_entry(list_front(&cur->donations), struct thread, d_elem)->priority;
+		if (!list_empty(&lock_holder->donations)) {
+			lock_holder->priority = list_entry(list_front(&lock_holder->donations), struct thread, d_elem)->priority;
 		}
 		else
-			cur->priority = cur->original_priority;
+			lock_holder->priority = lock_holder->original_priority;
 	}
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);

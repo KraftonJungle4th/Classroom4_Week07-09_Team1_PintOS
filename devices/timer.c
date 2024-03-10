@@ -137,11 +137,11 @@ static void timer_interrupt(struct intr_frame *args UNUSED)
 
 	if (timer_ticks() % TIMER_FREQ == 0) {
 		calculate_load_avg();
-		// calculate_recent_cpu();
+		calculate_all_recent_cpu();
 	}
-	// if (timer_ticks() % 4 == 0)
-	// 	recalculate_priority();
-	// thread_current()->recent_cpu = add_fixed_point_integer(thread_current()->recent_cpu, 1);
+	if (timer_ticks() % 4 == 0)
+		calculate_all_priority();
+	recent_cpu_plus();
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
