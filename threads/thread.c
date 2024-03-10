@@ -463,7 +463,8 @@ void calculate_all_priority(void)
 		t->priority = calculate_one_priority(t);
 	}
 }
-
+/* calculate_one_priority - 스레드 t의 priority를 계산한다.
+ */
 int calculate_one_priority(struct thread *t)
 {
 	int priority = PRI_MAX - convert_to_integer_towards_zero(t->recent_cpu / 4) - (t->nice * 2);
