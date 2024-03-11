@@ -139,17 +139,18 @@ timer_interrupt (struct intr_frame *args UNUSED) {
 
 
 	if(thread_mlfqs){
-		//thread_current()->recent_cpu+= 1 * 1<<14;
-	
+
+		
 		// timer_ticks 는 10ms 마다 호출되므로 10ms 마다 load_avg를 업데이트
 		// 1초 마다 계산
-		//if(timer_ticks()%TIME_SLICE == 0){
-		//	recalculate_all_priority();
-		if(timer_ticks()%TIMER_FREQ==0){
-			calculate_load_avg();
-		//		calculate_recent_cpu();
+		if(timer_ticks()%TIME_SLICE == 0){
+			recalculate_all_priority();
+			if(timer_ticks()%TIMER_FREQ==0){
+				calculate_load_avg();
+				calculate_recent_cpu();
 			}
-		//}
+		}
+		recent_cpu_plus();
 	}
 	
 	/*

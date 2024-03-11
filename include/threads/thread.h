@@ -108,7 +108,7 @@ struct thread {
 	/* For MLFQS */
 	int nice;
 	int recent_cpu;
-	struct list_elem a_elem; // all_list를 위한 list_elem
+
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -151,6 +151,7 @@ void thread_yield (void);
 void calculate_load_avg(void);
 void calculate_recent_cpu(void);
 void recalculate_all_priority(void);
+int calculate_priority(struct thread *t);
 
 int thread_get_priority (void);
 void thread_set_priority (int);

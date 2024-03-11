@@ -7,6 +7,8 @@
         "string.h": "c",
         "synch.h": "c",
         "fixed-point.h": "c",
-        "intr-stubs.h": "c"
+        "intr-stubs.h": "c",
+        "process.h": "c",
+        "intrinsic.h": "c"
     }
 }

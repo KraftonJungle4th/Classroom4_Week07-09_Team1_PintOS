@@ -57,8 +57,6 @@ static struct thread *initial_thread;
 static struct lock tid_lock;
 
 int load_avg;
-#define F (1<<14)
-
 
 /* Thread destruction requests */
 static struct list destruction_req;
@@ -93,10 +91,6 @@ static void init_thread(struct thread *, const char *name, int priority);
 static void do_schedule(int status);
 static void schedule(void);
 static tid_t allocate_tid(void);
-void calculate_load_avg(void);
-void calculate_recent_cpu(void);
-void recalculate_priority(void);
-void calculate_priority(struct thread *t);
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -146,7 +140,6 @@ void thread_init(void)
 	list_init(&sleep_list);
 	list_init(&all_list);
 	list_init(&destruction_req);
-
 	load_avg = 0;
 
 	/* Set up a thread structure for the running thread. */
@@ -230,6 +223,8 @@ tid_t thread_create(const char *name, int priority, thread_func *function, void 
 	/* Initialize thread. */
 	init_thread(t, name, priority);
 	tid = t->tid = allocate_tid();
+
+	
 
 	/* Call the kernel_thread if it scheduled.
 	 * Note) rdi is 1st argument, and rsi is 2nd argument. */
@@ -357,6 +352,9 @@ void thread_yield(void)
  */
 void thread_set_priority(int new_priority)
 {
+	// 이거 주석처리않하면 터짐  확실함
+	// if(thread_mlfqs)
+	// 	return;
 	thread_current()->original_priority = new_priority;
 	if (list_empty(&thread_current()->donations))
 	{
@@ -378,8 +376,7 @@ void thread_set_nice(int nice)
 {
 	struct thread *t = thread_current();
 	t->nice = nice;
-	int _priority = PRI_MAX - convert_to_integer_towards_nearest(divide_fixed_point_integer(t->recent_cpu, 4)) - t->nice * 2;
-	thread_set_priority(_priority);
+	thread_set_priority(calculate_priority(t));
 }
 
 /* Returns the current thread's nice value. */
@@ -388,82 +385,13 @@ int thread_get_nice(void)
 	return thread_current()->nice;
 }
 
-/* thread_get_load_avg - 시스템의 load_avg * 100을 반환한다.
- */
-int thread_get_load_avg(void)
-{
-	ASSERT(thread_mlfqs);
-	// round to the nearest integer
-	return convert_to_integer_towards_nearest(multiply_fixed_point_integer(load_avg, 100));
-}
-
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int thread_get_recent_cpu(void)
 {
 	return convert_to_integer_towards_zero(multiply_fixed_point_integer(thread_current()->recent_cpu, 100));
+	// 버림이 맞나?
 }
-
-/* calculate_load_avg - load_avg를 1초마다 계산한다.
- */
-void calculate_load_avg(void)
-{
-	int ready_threads = list_size(&ready_list);
-	// printf("ready_threads: %d\n", ready_threads);
-	if (thread_current() != idle_thread)
-		ready_threads++;
-	load_avg = add_fixed_point(multiply_fixed_point(divide_fixed_point_integer(convert_to_fixed_point(59), 60), load_avg),
-								multiply_fixed_point_integer(divide_fixed_point_integer(convert_to_fixed_point(1), 60), ready_threads));
-}
-
-/* calculate_recent_cpu - 모든 스레드의 recent_cpu를 1초마다 계산한다.
- */
-void calculate_recent_cpu(void)
-{
-	ASSERT(thread_mlfqs);
-
-	struct list_elem *e;
-	struct thread *t;
-	for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e))
-	{
-		t = list_entry(e, struct thread, a_elem);
-		if (t != idle_thread)
-		{
-			int decay = divide_fixed_point(multiply_fixed_point_integer(load_avg, 2), add_fixed_point_integer(multiply_fixed_point_integer(load_avg, 2), 1));
-			int _recent_cpu = add_fixed_point_integer(multiply_fixed_point(decay, t->recent_cpu), t->nice);
-			// int _recent_cpu = add_fixed_point_integer(multiply_fixed_point(divide_fixed_point(multiply_fixed_point_integer(load_avg, 2), add_fixed_point_integer(multiply_fixed_point_integer(load_avg, 2), 1)), t->recent_cpu), t->nice);
-			t->recent_cpu = _recent_cpu;
-		}
-	}
-}
-/* recalculate_priority - 모든 스레드의 priority를 4 ticks마다 계산한다.
- */
-void recalculate_priority(void) 
-{
-	ASSERT(thread_mlfqs);
-	struct list_elem *e;
-	struct thread *t;
-	for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e))
-	{
-		t = list_entry(e, struct thread, a_elem);
-		calculate_priority(t);
-	}
-
-}
-
-void calculate_priority(struct thread *t)
-{
-	ASSERT(thread_mlfqs);
-	if (t != idle_thread)
-	{
-		int _priority = PRI_MAX - convert_to_integer_towards_nearest(divide_fixed_point_integer(t->recent_cpu, 4)) - t->nice * 2;
-		_priority = MIN(_priority, PRI_MAX);
-		_priority = MAX(_priority, PRI_MIN);
-		t->priority = _priority;
-	}
-}
-
-
 
 /* Idle thread.  Executes when no other thread is ready to run.
 
@@ -535,9 +463,13 @@ static void init_thread(struct thread *t, const char *name, int priority)
 	t->recent_cpu = 0;
 	t->nice = 0;
 
-	list_push_back(&all_list, &t->allelem);
+	//if (thread_current() != idle_thread)
+	// 위에 코드 처럼 하면 init thread에서 thread_current()를 호출할때 idle_thread가 아니라 init_thread를 호출한 스레드가 나옴?
+	// create이 완료 되기 전에 null값?
+	// 그래서 밑에 값으로 변경
+	if (strcmp(name, "idle"))
+		list_push_back(&all_list, &t->allelem);
 	list_init(&t->donations);
-	list_push_back(&all_list, &t->a_elem);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -703,6 +635,7 @@ static void schedule(void)
 		{
 			ASSERT(curr != next);
 			list_push_back(&destruction_req, &curr->elem);
+			list_remove(&curr->allelem); // DYING 예정인 스레드 all_list에서도 제거
 		}
 
 		// 스레드를 전환하기 전에 먼저 현재 실행 중인 스레드를 저장한다.
@@ -790,7 +723,7 @@ void thread_wakeup(int64_t os_ticks)
 int thread_get_load_avg(void)
 {
 
-	return convert_to_integer_towards_nearest(multiply_fixed_point(load_avg, convert_to_fixed_point(100)));
+	return convert_to_integer_towards_nearest(multiply_fixed_point_integer(load_avg, 100));
 	
 }
 //2.75 2진수  10.11 10.11 * 2^14 =101100000000000
@@ -819,10 +752,9 @@ void calculate_recent_cpu(void)
 	for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e))
 	{
 		t = list_entry(e, struct thread, allelem);
-		if (t == idle_thread)
-			continue;
 		t->recent_cpu = multiply_fixed_point (divide_fixed_point (multiply_fixed_point_integer (load_avg, 2), 
 		add_fixed_point_integer (multiply_fixed_point_integer (load_avg, 2), 1)), t->recent_cpu) + convert_to_fixed_point(t->nice);
+		t->priority = calculate_priority(t);
 	}
 
 }
@@ -833,25 +765,29 @@ void calculate_recent_cpu(void)
  */
 void recalculate_all_priority(void)
 {
+	if(list_empty(&all_list))
+		return;
 	struct list_elem *e;
 	struct thread *t;
-	unsigned int temp;
 	for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e))
 	{
 		t = list_entry(e, struct thread, allelem);
-		if (t == idle_thread)
-			continue;
-		calculate_priority(t);
+		t->priority = calculate_priority(t);
 	}
 }
 
-void calculate_priority(struct thread *t){
-	unsigned int temp;
-	temp = PRI_MAX - convert_to_integer_towards_nearest(divide_fixed_point(t->recent_cpu, convert_to_fixed_point(4))) - t->nice * 2;
+int calculate_priority(struct thread *t){
+	int temp = PRI_MAX - convert_to_integer_towards_nearest(divide_fixed_point(t->recent_cpu, convert_to_fixed_point(4))) - t->nice * 2;
 	if (temp > PRI_MAX)
-		t->priority = PRI_MAX;
+		temp = PRI_MAX;
 	else if (temp < PRI_MIN)
-		t->priority = PRI_MIN;
-	else
-		t->priority = temp;
+		temp = PRI_MIN;
+	return temp;
+}
+
+void recent_cpu_plus(void){
+	struct thread *t = thread_current();
+	if (t == idle_thread)
+		return;
+	t->recent_cpu = add_fixed_point_integer(t->recent_cpu, 1);
 }
