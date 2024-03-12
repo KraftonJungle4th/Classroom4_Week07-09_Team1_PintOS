@@ -56,7 +56,6 @@ static struct thread *initial_thread;
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
 
-int load_avg;
 
 /* Thread destruction requests */
 static struct list destruction_req;
@@ -81,7 +80,6 @@ bool thread_mlfqs;
 /* load_avg - 시스템의 load_avg * 2^14(F)을 저장한다.
  */
 int load_avg;
-
 
 static void kernel_thread(thread_func *, void *aux);
 
@@ -460,9 +458,6 @@ static void init_thread(struct thread *t, const char *name, int priority)
 	t->recent_cpu = 0;
 	t->magic = THREAD_MAGIC;
 
-	t->recent_cpu = 0;
-	t->nice = 0;
-
 	//if (thread_current() != idle_thread)
 	// 위에 코드 처럼 하면 init thread에서 thread_current()를 호출할때 idle_thread가 아니라 init_thread를 호출한 스레드가 나옴?
 	// create이 완료 되기 전에 null값?
@@ -621,7 +616,10 @@ static void schedule(void)
 	/* Activate the new address space. */
 	process_activate(next);
 #endif
-
+	/*
+		현재 실행 중인 스레드(curr)와 다음에 실행할 스레드(next)가 동일하지 않은 경우에만 스레드 전환 로직을 실행
+		만약 두 스레드가 같다면, 스레드 전환이 필요 없기 때문에 아무런 조치를 취하지 않는다.
+	*/
 	if (curr != next)
 	{
 		/* If the thread we switched from is dying, destroy its struct
@@ -631,9 +629,16 @@ static void schedule(void)
 		   currently used by the stack.
 		   The real destruction logic will be called at the beginning of the
 		   schedule(). */
+		/*
+		현재 스레드가 종료 상태(THREAD_DYING)에 있고, 초기 스레드가 아닐 경우에만 실행된다. 
+		초기 스레드는 시스템이 계속 작동하는 데 필요하므로 제거되어서는 안 된다.
+		*/
 		if (curr && curr->status == THREAD_DYING && curr != initial_thread)
 		{
 			ASSERT(curr != next);
+			/*
+				종료 상태의 스레드 구조체를 나중에 해제할 수 있도록 해제 요청 목록(destruction_req)에 추가
+			*/
 			list_push_back(&destruction_req, &curr->elem);
 			list_remove(&curr->allelem); // DYING 예정인 스레드 all_list에서도 제거
 		}

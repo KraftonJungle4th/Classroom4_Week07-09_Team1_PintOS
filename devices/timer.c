@@ -84,13 +84,18 @@ timer_ticks (void) {
 }
 
 /* Returns the number of timer ticks elapsed since THEN, which
-   should be a value once returned by timer_ticks(). */
+   should be a value once returned by timer_ticks().
+   THEN 이후 경과한 타이머 틱 수를 반환하며, 
+   이 값은 timer_ticks()가 반환한 값이어야 합니다.
+*/
 int64_t
 timer_elapsed (int64_t then) {
 	return timer_ticks () - then;
 }
 
-/* Suspends execution for approximately TICKS timer ticks. */
+/* Suspends execution for approximately TICKS timer ticks. 
+ 약 틱 타이머 틱 동안 실행을 일시 중단합니다.
+*/
 void
 timer_sleep (int64_t ticks) {
 	int64_t start = timer_ticks ();	// 현재 타이머 틱 값 저장
@@ -101,7 +106,7 @@ timer_sleep (int64_t ticks) {
 	// while (timer_elapsed (start) < ticks)	// 경과한 시간이 주어진 시간보다 작은지 검사
 	// 										// timer_elapsed(start)는 현재 시간과 
 	// 										// 함수 호출 직전의 시간 (start)의 차이를 계산하여 경과한 시간을 반환
-	// 	thread_yield ();	//다른 스레드에 CPU 양보
+	//	thread_yield ();	//다른 스레드에 CPU 양보
 	if(timer_elapsed(start)<ticks)
 		thread_sleep(start+ticks);
 }
