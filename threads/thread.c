@@ -25,17 +25,17 @@
    Do not modify this value. */
 #define THREAD_BASIC 0xd42df210
 
-/* THREAD_READY 상태의 프로세스 리스트, 즉 실행할 준비가 되었지만 실제로 실행되지는 않은 프로세스의 리스트
+/* THREAD_READY 상태의 스레드 리스트, 즉 실행할 준비가 되었지만 실제로 실행되지는 않은 스레드의 리스트
  * priority를 기준으로 내림차순 정렬되어 있다.
  */
 static struct list ready_list;
 
-/* THREAD_BLOCKED 상태의 프로세스 리스트, 즉 실행할 준비가 되지 않은 프로세스의 리스트
+/* THREAD_BLOCKED 상태의 스레드 리스트, 즉 실행할 준비가 되지 않은 스레드의 리스트
  * wakeup_tick을 기준으로 오름차순 정렬되어 있다.
  */
 static struct list sleep_list;
 
-/* RUNNING, READY, BLOCKED 상태의 모든 프로세스 리스트
+/* RUNNING, READY, BLOCKED 상태의 모든 스레드 리스트
  * IDLE 스레드는 포함하지 않는다.
  */
 static struct list all_list;
@@ -200,14 +200,13 @@ void thread_print_stats(void)
  * 스레드를 생성하고, ready_list에 스레드를 추가한다.
  * 새 스레드의 tid를 반환하거나 생성에 실패하면 TID_ERROR를 반환한다.
  * FUNCTION이 실행되는 시점은 thread_create()가 반환된 이후이다.
- *
  * 새로 생성된 스레드와 현재 실행 중인 스레드의 우선 순위를 비교하여 현재 스레드의 우선 순위가 더 낮다면 CPU를 양보한다.
 
-   thread_start()가 호출되었다면 thread_create()가 반환되기 전에 새 스레드가 예약될 수 있습니다.
-   심지어 thread_create()가 반환되기 전에 종료될 수도 있습니다.
-   반대로, 원래 스레드는 새 스레드가 예약되기 전에 얼마든지 실행될 수 있습니다.
-   순서를 보장해야 하는 경우 세마포어 또는 다른 형태의 동기화를 사용하십시오.
-   */
+ * thread_start()가 호출되었다면 thread_create()가 반환되기 전에 새 스레드가 예약될 수 있습니다.
+ * 심지어 thread_create()가 반환되기 전에 종료될 수도 있습니다.
+ * 반대로, 원래 스레드는 새 스레드가 예약되기 전에 얼마든지 실행될 수 있습니다.
+ * 순서를 보장해야 하는 경우 세마포어 또는 다른 형태의 동기화를 사용하십시오.
+ */
 tid_t thread_create(const char *name, int priority, thread_func *function, void *aux)
 {
 	enum intr_level old_level;
@@ -326,8 +325,8 @@ void thread_exit(void)
 }
 
 /* thread_yield - 현재 실행 중인 스레드가 CPU를 양보하고, ready_list에 우선순위 내림차순으로 삽입한다.
- * 현재 스레드는 BLOCKED 상태로 전환되지 않으며 스케줄러의 재량에 따라 즉시 다시 스케줄될 수 있습니다.
- * 만약 현재 스레드가 idle_thread라면 스케줄만 한다.
+ * 현재 스레드는 BLOCKED 상태로 전환되지 않으며 스케줄러의 재량에 따라 즉시 다시 스케줄될 수 있다.
+ * 만약 현재 스레드가 Idle 스레드라면 ready_list에 삽입하지 않는다.
  */
 void thread_yield(void)
 {
@@ -463,7 +462,8 @@ void calculate_all_priority(void)
 		t->priority = calculate_one_priority(t);
 	}
 }
-
+/* calculate_one_priority - 스레드 t의 priority를 계산한다.
+ */
 int calculate_one_priority(struct thread *t)
 {
 	int priority = PRI_MAX - convert_to_integer_towards_zero(t->recent_cpu / 4) - (t->nice * 2);
@@ -521,7 +521,7 @@ static void kernel_thread(thread_func *function, void *aux)
 }
 
 /* init_thread - 스레드 t를 name이라는 priority를 가진 BLOCKED 스레드로 초기화한다.
- * Priority를 위한 리스트를 초기화한다.
+ * donations 리스트를 초기화한다.
  */
 static void init_thread(struct thread *t, const char *name, int priority)
 {
@@ -745,8 +745,11 @@ bool less_wakeup_ticks(const struct list_elem *a, const struct list_elem *b, voi
 	return ta->wakeup_ticks < tb->wakeup_ticks;
 }
 
-/* thread_sleep - 현재 스레드가 Idle 스레드가 아닌경우 thread_block()을 호출하여 현재 스레드를 BLOCKED 상태로 전환하고, schedule()을 호출한다.
- * sleep_list에 wakeup_ticks 오름차순으로 배치한다.
+/* thread_sleep - 현재 실행 중인 스레드들 재운다.
+ * sleep_list에 wakeup_ticks 기준으로 오름차순 삽입하고 스레드의 상태를 BLOCKED 상태로 전환한다.
+ * thread_block() 내부적으로 schedule()을 호출하여 스케줄링을 수행한다.
+ * 
+ * Idle 스레드는 thread_sleep()을 호출할 수 없다.
  * 스레드 리스트를 조작할때, 인터럽트를 비활성화하고 조작이 끝나면 다시 활성화해야 한다.
  */
 void thread_sleep(int64_t ticks)
@@ -762,7 +765,11 @@ void thread_sleep(int64_t ticks)
 	intr_set_level(old_level);
 }
 
-/* thread_wakeup - 스레드의 wakeup_ticks이 현재 os_ticks보다 작아지면 깨어나야 하므로, 스레드를 READY 상태로 만들고 ready_list로 이동한다.
+/* thread_wakeup - 잠들어 있는 스레드를 깨운다.
+ * sleep_list를 순회하면서 wakeup_ticks이 현재 os_ticks보다 작아진 스레드를 깨운다.
+ * sleep_list는 wakeup_ticks 기준으로 오름차순으로 정렬되어 있다.
+ * 깨어난 스레드는 READY 상태로 전환되고 ready_list에 priority 기준으로 내림차순 삽입된다.
+ * 
  * 이 함수는 타이머 인터럽트 핸들러에서 호출된다. 따라서 이 함수는 외부 인터럽트 컨텍스트에서 실행된다.
  * 스레드 리스트를 조작할때, 인터럽트를 비활성화하고 조작이 끝나면 다시 활성화해야 한다.
  */

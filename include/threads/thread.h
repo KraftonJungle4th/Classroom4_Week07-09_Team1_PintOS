@@ -165,6 +165,6 @@ void calculate_all_recent_cpu(void);
 int calculate_one_recent_cpu(struct thread *t);
 void recent_cpu_plus(void);
 void calculate_all_priority(void);
-int calculate_one_priority(struct thread *t);
+int calculate_new_priority(struct thread *t);
 
 #endif /* threads/thread.h */
