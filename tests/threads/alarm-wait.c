@@ -14,7 +14,6 @@ static void test_sleep(int thread_cnt, int iterations);
 
 void test_alarm_single(void)
 {
-  printf("test_alarm_single() called\n");
   test_sleep(5, 1);
 }
 
@@ -48,7 +47,6 @@ static void sleeper(void *);
 /* Runs THREAD_CNT threads thread sleep ITERATIONS times each. */
 static void test_sleep(int thread_cnt, int iterations)
 {
-  printf("test_sleep() called\n");
   struct sleep_test test;
   struct sleep_thread *threads;
   int *output, *op;
