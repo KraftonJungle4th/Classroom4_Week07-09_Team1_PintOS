@@ -214,26 +214,26 @@ tid_t thread_create(const char *name, int priority, thread_func *function, void 
 	ASSERT(function != NULL);
 
 	/* Allocate thread. */
-	t = palloc_get_page(PAL_ZERO);
+	t = palloc_get_page(PAL_ZERO); //4KB
 	if (t == NULL)
 		return TID_ERROR;
 
 	/* Initialize thread. */
 	init_thread(t, name, priority);
-	tid = t->tid = allocate_tid();
-
-	
+	tid = t->tid = allocate_tid();	// 스레드 id 할당
 
 	/* Call the kernel_thread if it scheduled.
 	 * Note) rdi is 1st argument, and rsi is 2nd argument. */
-	t->tf.rip = (uintptr_t)kernel_thread;
-	t->tf.R.rdi = (uint64_t)function;
-	t->tf.R.rsi = (uint64_t)aux;
-	t->tf.ds = SEL_KDSEG;
-	t->tf.es = SEL_KDSEG;
-	t->tf.ss = SEL_KDSEG;
-	t->tf.cs = SEL_KCSEG;
-	t->tf.eflags = FLAG_IF;
+	/* 예약된 경우 kernel_thread를 호출합니다. 
+	* 참고) rdi는 첫 번째 인수, rsi는 두 번째 인수입니다. */
+	t->tf.rip = (uintptr_t)kernel_thread;	//rip 레지스터(명령 포인터)에 kernel_thread 함수의 주소를 설정 CPU가 다음에 실행할 코드의 위치를 지정한다.
+	t->tf.R.rdi = (uint64_t)function;		// 첫 번째 함수 인자를 전달하기 위한 rdi 레지스터에 fuction의 주소를 설정
+	t->tf.R.rsi = (uint64_t)aux;			// 두 번째 함수 인자를 전달하기 위한 rsi 레지스터에 aux의 주소를 설정
+	t->tf.ds = SEL_KDSEG;					// 데이터 세그먼트 레지스터에 커널 데이터 세그먼트 셀렉터를 설정
+	t->tf.es = SEL_KDSEG;					// 확장 세그먼트 레지스터에 커널 데이터 세그먼트 셀렉터를 설정
+	t->tf.ss = SEL_KDSEG;					// 스택 세그먼트 레지스터에 커널 데이터 세그먼트 셀렉터를 설정
+	t->tf.cs = SEL_KCSEG;					// 코드 세그먼트 레지스터에 커널 코드 세그먼트 셀렉터를 설정
+	t->tf.eflags = FLAG_IF;					// CPU의 플래그 레지스터(eflags)에 인터럽트 플래그(IF)를 설정합니다. 이는 외부 인터럽트를 허용하여 시스템의 반응성을 높이는 데 사용
 
 	/* Add to run queue. */
 	thread_unblock(t);
@@ -343,6 +343,11 @@ void thread_yield(void)
 	// list_sort(&ready_list, (list_less_func *)higher_priority, NULL);
 	do_schedule(THREAD_READY);
 	intr_set_level(old_level);
+}
+
+void thread_try_yield(void) {
+    if (!list_empty(&ready_list) && thread_current() != idle_thread && !intr_context())
+        thread_yield();
 }
 
 /* thread_set_priority - 현재 실행중인 스레드의 우선순위를 새로운 우선순위로 설정하고,
@@ -649,14 +654,18 @@ static void schedule(void)
 }
 
 /* Returns a tid to use for a new thread. */
+/*새로운 스레드 ID(tid)를 할당하고 관리하는 데 사용*/
 static tid_t allocate_tid(void)
 {
-	static tid_t next_tid = 1;
-	tid_t tid;
+	static tid_t next_tid = 1;		// 정적(static) 변수를 선언하고 초기값으로 1을 할당
+									// 프로그램 실행 중 단 한 번만 초기화되며, 함수가 종료되어도 그 값이 유지된다.
+	tid_t tid;						// 스레드 ID를 임시로 저장할 변수 tid를 선언
 
-	lock_acquire(&tid_lock);
-	tid = next_tid++;
-	lock_release(&tid_lock);
+	lock_acquire(&tid_lock);		// tid_lock이라는 락을 획득
+									// allocate_tid 함수가 여러 스레드에 의해 동시에 호출될 때, next_tid 변수의 동시 접근을 방지하기 위한 동기화 메커니즘
+									// 즉, 한 시점에 하나의 스레드만이 next_tid 값을 변경할 수 있도록 한다.
+	tid = next_tid++;				
+	lock_release(&tid_lock);		// 락을 해제합니다. 이는 다른 스레드가 tid_lock을 획득하고 allocate_tid 함수를 안전하게 호출할 수 있도록 한다.
 
 	return tid;
 }

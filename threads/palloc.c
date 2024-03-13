@@ -258,29 +258,43 @@ palloc_init (void) {
    otherwise from the kernel pool.  If PAL_ZERO is set in FLAGS,
    then the pages are filled with zeros.  If too few pages are
    available, returns a null pointer, unless PAL_ASSERT is set in
-   FLAGS, in which case the kernel panics. */
-void *
-palloc_get_multiple (enum palloc_flags flags, size_t page_cnt) {
+   FLAGS, in which case the kernel panics. 
+
+   PAGE_CNT 인접한 빈 페이지 그룹을 가져와 반환합니다. 
+   PAL_USER가 설정되어 있으면 사용자 풀에서, 그렇지 않으면 커널 풀에서 페이지를 가져옵니다.  
+   FLAGS에 PAL_ZERO가 설정되어 있으면, 페이지가 0으로 채워집니다.  
+   사용 가능한 페이지가 너무 적으면 널 포인터를 반환하지만, 
+   PAL_ASSERT가 FLAGS에 설정되어 있지 않으면 커널이 패닉에 빠집니다.
+ */
+// enum palloc_flags flags: 할당할 페이지의 특성을 지정하는 플래그(예: 페이지를 0으로 초기화, 사용자 페이지 할당 등).
+// size_t page_cnt: 할당할 페이지의 개수.
+void *palloc_get_multiple (enum palloc_flags flags, size_t page_cnt) {
+	//  PAL_USER 플래그를 기반으로 사용자 풀 또는 커널 풀 중에서 메모리 할당을 위한 풀(pool)을 선택합니다.
 	struct pool *pool = flags & PAL_USER ? &user_pool : &kernel_pool;
 
+	//메모리 할당을 시도하기 전에 해당 풀에 대한 락을 획득하여 동시 접근을 방지합니다.
 	lock_acquire (&pool->lock);
+	// 비트맵을 사용해 요청된 수(page_cnt)만큼의 연속된 미사용 페이지를 찾고, 해당 페이지들을 사용 중으로 표시합니다.
 	size_t page_idx = bitmap_scan_and_flip (pool->used_map, 0, page_cnt, false);
+	// 작업 완료시 해당 풀에 대한 락을 해제합니다.
 	lock_release (&pool->lock);
+
 	void *pages;
 
+	// if 할당된 페이지가 있다면 pages 변수를 할당된 페이지들의 시작 주소로 설정
+	// 이 주소는 풀의 기본 주소에 페이지 크기(PGSIZE)와 할당된 페이지의 인덱스(page_idx)를 곱한 값으로 계산
 	if (page_idx != BITMAP_ERROR)
 		pages = pool->base + PGSIZE * page_idx;
-	else
+	else // 할당 실패시 pages를 NULL로 설정
 		pages = NULL;
-
 	if (pages) {
-		if (flags & PAL_ZERO)
+		if (flags & PAL_ZERO)	// flags & PAL_ZERO 플래그가 설정되어 있으면, 할당된 페이지들을 0으로 초기화합니다(memset 함수 사용).
 			memset (pages, 0, PGSIZE * page_cnt);
-	} else {
+	} else { // 할당된 페이지가 없고 flags & PAL_ASSERT 플래그가 설정되어 있으면 커널 패닉을 발생시킵니다.
 		if (flags & PAL_ASSERT)
 			PANIC ("palloc_get: out of pages");
 	}
-
+	// 할당된 페이지들의 시작 주소를 반환합니다. 할당에 실패한 경우 NULL을 반환
 	return pages;
 }
 

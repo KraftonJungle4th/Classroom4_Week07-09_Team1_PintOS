@@ -26,6 +26,7 @@ static void process_cleanup (void);
 static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
 static void __do_fork (void *);
+void argument_passing (char *file_name, struct intr_frame *if_);
 
 /* General process initializer for initd and other process. */
 static void
@@ -161,7 +162,7 @@ error:
 /* Switch the current execution context to the f_name.
  * Returns -1 on fail. */
 int
-process_exec (void *f_name) {
+process_exec (void *f_name) {	// 인자 실행하려는 바이너리 파일 이름
 	char *file_name = f_name;
 	bool success;
 
@@ -177,6 +178,14 @@ process_exec (void *f_name) {
 	process_cleanup ();
 
 	/* And then load the binary */
+	// 가장 먼저 해야할 일은 해당 바이너리 파일을 로드하는 것
+	// 디스크를 메모리에 저장한 다음 해당 이진 파일에서 실행하려는 명령어의 지시 위치를 얻은 다음
+	// load 성공시 사용자 스택의 상단 포인터를 얻는다.
+
+	// 로드는 디스크에서 바이너리 파일을 로드하는 것부터 메모리를 초기화 하는 것 까지 거의 모든 작업을
+	// 수행한다.
+	// ELF(Executable and Linkable Format)는 실행 파일, 목적 파일, 공유 라이브러리 그리고 코어 덤프를 위한 표준 파일 형식
+	argument_passing (file_name, &_if);
 	success = load (file_name, &_if);
 
 	/* If load failed, quit. */
@@ -364,7 +373,12 @@ void argument_passing (char *file_name, struct intr_frame *if_) {
 /* Loads an ELF executable from FILE_NAME into the current thread.
  * Stores the executable's entry point into *RIP
  * and its initial stack pointer into *RSP.
- * Returns true if successful, false otherwise. */
+ * Returns true if successful, false otherwise. 
+ * 
+ * FILE_NAME에서 현재 스레드로 ELF 실행 파일을 로드합니다. 
+ * 실행 파일의 진입점을 *RIP *에, 초기 스택 포인터를 *RSP에 저장합니다. 
+ * 성공하면 true를 반환하고, 그렇지 않으면 false를 반환합니다.
+ */
 static bool
 load (const char *file_name, struct intr_frame *if_) {
 	struct thread *t = thread_current ();
@@ -453,15 +467,17 @@ load (const char *file_name, struct intr_frame *if_) {
 	}
 
 	/* Set up stack. */
-	if (!setup_stack (if_))
+	if (!setup_stack (if_))	// 프로그램에 대한 사용자 스택을 초기화 하는 코드
 		goto done;
 
 	/* Start address. */
-	if_->rip = ehdr.e_entry;
+	if_->rip = ehdr.e_entry;	// 로드함수를 실행하는 데 필요한 이진 변수의 스택 진입점을 초기화 하는 함수
+	// if_->R.rsi = argv;
 
 	/* TODO: Your code goes here.
-	 * TODO: Implement argument passing (see project2/argument_passing.html). */
-
+	 * TODO: Implement argument passing (see project2/argument_passing.html).
+	 * TODO: 인수 전달을 구현하기 project2/argument_passing.html 참조
+	*/
 	success = true;
 
 done:
