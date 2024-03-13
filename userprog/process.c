@@ -316,6 +316,51 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		uint32_t read_bytes, uint32_t zero_bytes,
 		bool writable);
 
+void argument_passing (char *file_name, struct intr_frame *if_) {
+	char *argv[32];
+	// 1. 명령을 단어로 나눈다.
+	char *token, *save_ptr, *cursor = if_->rsp;
+	for (int i = 0, token = strtok_r (file_name, " ", &save_ptr); token != NULL; token = strtok_r (NULL, " ", &save_ptr), i++)
+	{
+		argv[i] = token;
+		if_->R.rdi = i+1; 
+		
+	}
+
+	char *addrs[32];
+	int len;
+	// 2. 단어를 스택의 맨위에 넣는다.
+	for (int i = if_->R.rdi - 1; i >= 0; i--)
+	{
+		len = strlen(argv[i])+1;
+		cursor -= len;
+		strlcpy(cursor, argv[i], len);
+		addrs[i] = cursor;
+	}
+
+	// 3. 스택을 8바이트로 정렬한다.
+	while ((uint64_t)cursor % 8 != 0)
+		cursor--;
+
+	// 4. 널 포인터 센티널을 넣는다.
+	cursor -= 8;
+	*(char**)cursor = 0;
+
+	// 5. 스택에 주소를 넣는다.
+	for (int i = if_->R.rdi - 1; i >= 0; i--)
+	{
+		cursor -= 8;
+		*(char**)cursor = addrs[i];
+	}
+
+	// 6. 가짜 반환 주소를 넣는다.
+	cursor -= 8;
+	*(char**)cursor = (void *)(0);
+	if_->rsp = USER_STACK;
+	// hex_dump(if_->rsp, if_->rsp, USER_STACK - if_->rsp, true);
+	hex_dump(if_->rsp, &argv, 64, true);
+}
+
 /* Loads an ELF executable from FILE_NAME into the current thread.
  * Stores the executable's entry point into *RIP
  * and its initial stack pointer into *RSP.
