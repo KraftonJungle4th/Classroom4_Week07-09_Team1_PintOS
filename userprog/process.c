@@ -158,33 +158,34 @@ error:
 	thread_exit ();
 }
 
-/* Switch the current execution context to the f_name.
- * Returns -1 on fail. */
-int
-process_exec (void *f_name) {
+/* 현재 실행 컨텍스트를 f_name으로 전환한다.
+ * 실패 시 -1을 반환한다. 
+ */
+int process_exec (void *f_name) {
+	printf("# process_exec() called. f_name: %s\n", f_name);
 	char *file_name = f_name;
 	bool success;
 
-	/* We cannot use the intr_frame in the thread structure.
-	 * This is because when current thread rescheduled,
-	 * it stores the execution information to the member. */
+	/* 스레드 구조체에서는 intr_frame을 사용할 수 없다.
+	 * 현재 스레드가 재스케줄 될 때 실행 정보를 멤버에 저장하기 때문이다.
+	 */
 	struct intr_frame _if;
 	_if.ds = _if.es = _if.ss = SEL_UDSEG;
 	_if.cs = SEL_UCSEG;
 	_if.eflags = FLAG_IF | FLAG_MBS;
 
-	/* We first kill the current context */
+	/* 먼저 현재 컨텍스트를 죽인다. */
 	process_cleanup ();
 
-	/* And then load the binary */
+	/* 그리고 바이너리를 불러온다. */
 	success = load (file_name, &_if);
 
-	/* If load failed, quit. */
+	/* 로드에 실패하면 종료한다. */
 	palloc_free_page (file_name);
 	if (!success)
 		return -1;
 
-	/* Start switched process. */
+	/* 전환된 프로세스를 시작한다. */
 	do_iret (&_if);
 	NOT_REACHED ();
 }
@@ -316,31 +317,37 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		uint32_t read_bytes, uint32_t zero_bytes,
 		bool writable);
 
-/* Loads an ELF executable from FILE_NAME into the current thread.
- * Stores the executable's entry point into *RIP
- * and its initial stack pointer into *RSP.
- * Returns true if successful, false otherwise. */
-static bool
-load (const char *file_name, struct intr_frame *if_) {
+/* FILE_NAME에서 현재 스레드로 ELF 실행 파일을 로드한다.
+ * 실행 파일의 진입점을 *RIP에, 초기 스택 포인터를 *RSP에 저장한다.
+ * 성공하면 true, 실패하면 false를 반환한다.
+ */
+static bool load (const char *file_name, struct intr_frame *if_) {
+	printf("# load() called\n");
+	printf("# file_name: %s\n", file_name);	
+	printf("# if_: %p\n", if_);
 	struct thread *t = thread_current ();
 	struct ELF ehdr;
 	struct file *file = NULL;
 	off_t file_ofs;
 	bool success = false;
 	int i;
-
+	printf("#1\n");
 	/* Allocate and activate page directory. */
 	t->pml4 = pml4_create ();
 	if (t->pml4 == NULL)
 		goto done;
 	process_activate (thread_current ());
-
+	printf("#2\n");
+	printf("# if_: %p\n", if_);
+	// hex_dump(if_->rsp, if_->rsp, 100, true);
 	/* Open executable file. */
 	file = filesys_open (file_name);
+	printf("#file: %p\n", file);
 	if (file == NULL) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
 	}
+	printf("#3\n");
 
 	/* Read and verify executable header. */
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -353,6 +360,7 @@ load (const char *file_name, struct intr_frame *if_) {
 		printf ("load: %s: error loading executable\n", file_name);
 		goto done;
 	}
+	printf("#4\n");
 
 	/* Read program headers. */
 	file_ofs = ehdr.e_phoff;
@@ -406,6 +414,7 @@ load (const char *file_name, struct intr_frame *if_) {
 				break;
 		}
 	}
+	printf("#5\n");
 
 	/* Set up stack. */
 	if (!setup_stack (if_))
@@ -416,6 +425,10 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* TODO: Your code goes here.
 	 * TODO: Implement argument passing (see project2/argument_passing.html). */
+	if_->rsp = USER_STACK;
+		
+	
+
 
 	success = true;
 

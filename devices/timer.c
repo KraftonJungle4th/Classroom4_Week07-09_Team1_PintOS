@@ -100,21 +100,18 @@ void timer_sleep(int64_t ticks)
 /* Suspends execution for approximately MS milliseconds. */
 void timer_msleep(int64_t ms)
 {
-	printf("timer_msleep() called with ms: %lld\n", ms);
 	real_time_sleep(ms, 1000);
 }
 
 /* Suspends execution for approximately US microseconds. */
 void timer_usleep(int64_t us)
 {
-	printf("timer_usleep() called with us: %lld\n", us);
 	real_time_sleep(us, 1000 * 1000);
 }
 
 /* Suspends execution for approximately NS nanoseconds. */
 void timer_nsleep(int64_t ns)
 {
-	printf("timer_nsleep() called with ns: %lld\n", ns);
 	real_time_sleep(ns, 1000 * 1000 * 1000);
 }
 
