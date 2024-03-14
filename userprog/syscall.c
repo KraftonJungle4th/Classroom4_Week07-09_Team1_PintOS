@@ -37,10 +37,28 @@ syscall_init (void) {
 			FLAG_IF | FLAG_TF | FLAG_DF | FLAG_IOPL | FLAG_AC | FLAG_NT);
 }
 
-/* The main system call interface */
-void
-syscall_handler (struct intr_frame *f UNUSED) {
-	// TODO: Your implementation goes here.
+/* The main system call interface
+ * 1. 포인터가 유효하지 않은 경우
+ * 2. 포인터가 커널 영역에 있는 경우
+ * 3. 포인터가 가리키는 블록이 커널 영역에 부분적으로 있는 경우
+ */
+void syscall_handler (struct intr_frame *f) {
+	
+	if (!is_user_vaddr(f->rsp)) {
+		printf("rsp is not in user vaddr\n");
+		thread_exit();
+	}
+
+	if (KERN_BASE < f->rsp || f->rsp < 0) {
+		printf("rsp is in kernel vaddr\n");
+		thread_exit();
+	}
+
+	if (KERN_BASE < f->rsp + 8 || f->rsp + 8 < 0) {
+		printf("rsp partially is in kernel vaddr\n");
+		thread_exit();
+	}
+
 	printf ("system call!\n");
 	thread_exit ();
 }
