@@ -240,7 +240,7 @@ static char **parse_options(char **argv)
 	return argv;
 }
 
-/* Runs the task specified in ARGV[1]. */
+/* ARGV[1]에 지정된 작업을 실행한다. */
 static void run_task(char **argv)
 {
 	const char *task = argv[1];
@@ -261,8 +261,8 @@ static void run_task(char **argv)
 	printf("Execution of '%s' complete.\n", task);
 }
 
-/* Executes all of the actions specified in ARGV[]
-   up to the null pointer sentinel. */
+/* ARGV[]에 지정된 모든 액션을 널 포인터 센티널까지 실행한다.
+ */
 static void run_actions(char **argv)
 {
 	/* An action. */

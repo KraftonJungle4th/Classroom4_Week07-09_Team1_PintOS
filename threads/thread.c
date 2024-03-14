@@ -345,6 +345,11 @@ void thread_yield(void)
 	intr_set_level(old_level);
 }
 
+void thread_try_yield(void) {
+	if (!list_empty(&ready_list) && thread_current() != idle_thread && !intr_context())
+		thread_yield();
+}
+
 /* thread_set_priority - 현재 스레드의 우선순위를 새로운 우선순위로 설정하고,
  * 우선순위가 낮아진다면 ready_list에서 자신보다 더 높은 우선순위를 가진 스레드가 있는지 확인하여야 한다.
  * 고급 스케줄러를 사용하는 경우에는 이 함수를 사용하지 않는다.
