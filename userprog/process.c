@@ -26,20 +26,21 @@ static void process_cleanup (void);
 static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
 static void __do_fork (void *);
-
+void set_userstack(char **argv, int argc, struct intr_frame *if_);
 /* General process initializer for initd and other process. */
 static void
 process_init (void) {
 	struct thread *current = thread_current ();
 }
 
-/* Starts the first userland program, called "initd", loaded from FILE_NAME.
- * The new thread may be scheduled (and may even exit)
- * before process_create_initd() returns. Returns the initd's
- * thread id, or TID_ERROR if the thread cannot be created.
- * Notice that THIS SHOULD BE CALLED ONCE. */
-tid_t
-process_create_initd (const char *file_name) {
+/* process_create_initd - FILE_NAME에서 로드된 "initd"라는 첫 번째 userland 프로그램을 시작한다.
+ * 
+ * process_create_initd()가 반환되기 전에 새 스레드가 스케줄될 수 있으며 종료될 수도 있다.
+ * initd의 스레드 ID를 반환하거나 스레드를 생성할 수 없는 경우 TID_ERROR를 반환한다.
+ * 
+ * 이 함수는 한 번만 호출되어야 한다.
+ */
+tid_t process_create_initd (const char *file_name) {
 	char *fn_copy;
 	tid_t tid;
 
@@ -50,6 +51,10 @@ process_create_initd (const char *file_name) {
 		return TID_ERROR;
 	strlcpy (fn_copy, file_name, PGSIZE);
 
+	// file_name을 나누어 첫 번째 단어를 가져온다.
+	char *save_ptr;
+	strtok_r(file_name, " ",  &save_ptr);
+
 	/* Create a new thread to execute FILE_NAME. */
 	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
 	if (tid == TID_ERROR)
@@ -57,9 +62,9 @@ process_create_initd (const char *file_name) {
 	return tid;
 }
 
-/* A thread function that launches first user process. */
-static void
-initd (void *f_name) {
+/* initd - 첫 번째 사용자 프로세스를 시작하는 스레드 함수
+ */
+static void initd (void *f_name) {
 #ifdef VM
 	supplemental_page_table_init (&thread_current ()->spt);
 #endif
@@ -158,33 +163,45 @@ error:
 	thread_exit ();
 }
 
-/* Switch the current execution context to the f_name.
- * Returns -1 on fail. */
-int
-process_exec (void *f_name) {
+/* process_exec - 현재 실행 컨텍스트를 f_name으로 전환한다.
+ * 실패 시 -1을 반환한다. 
+ */
+int process_exec (void *f_name) {
 	char *file_name = f_name;
 	bool success;
 
-	/* We cannot use the intr_frame in the thread structure.
-	 * This is because when current thread rescheduled,
-	 * it stores the execution information to the member. */
+	/* 스레드 구조체에서는 intr_frame을 사용할 수 없다.
+	 * 현재 스레드가 재스케줄 될 때 실행 정보를 멤버에 저장하기 때문이다.
+	 */
 	struct intr_frame _if;
 	_if.ds = _if.es = _if.ss = SEL_UDSEG;
 	_if.cs = SEL_UCSEG;
 	_if.eflags = FLAG_IF | FLAG_MBS;
 
-	/* We first kill the current context */
+	/* 먼저 현재 컨텍스트를 죽인다. */
 	process_cleanup ();
 
-	/* And then load the binary */
-	success = load (file_name, &_if);
+	// 1. 명령을 단어로 나눈다.
+	char *argv[64];
+	char *token, *save_ptr;
+	int argc = 0;
+	for (token = strtok_r (file_name, " ", &save_ptr); token != NULL; token = strtok_r (NULL, " ", &save_ptr))
+		argv[argc++] = token;
 
-	/* If load failed, quit. */
+	/* 그리고 바이너리를 불러온다. */
+	success = load(file_name, &_if);
+
+	set_userstack(argv, argc, &_if);
+	_if.R.rdi = argc;
+	_if.R.rsi = _if.rsp + 8;
+	hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
+
+	/* 로드에 실패하면 종료한다. */
 	palloc_free_page (file_name);
 	if (!success)
 		return -1;
 
-	/* Start switched process. */
+	/* 전환된 프로세스를 시작한다. */
 	do_iret (&_if);
 	NOT_REACHED ();
 }
@@ -204,6 +221,9 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
+	for (int i =0; i <= 10000000000000; i++){
+		continue;
+	}
 	return -1;
 }
 
@@ -316,69 +336,23 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		uint32_t read_bytes, uint32_t zero_bytes,
 		bool writable);
 
-void argument_passing (char *file_name, struct intr_frame *if_) {
-	char *argv[32];
-	// 1. 명령을 단어로 나눈다.
-	char *token, *save_ptr, *cursor = if_->rsp;
-	for (int i = 0, token = strtok_r (file_name, " ", &save_ptr); token != NULL; token = strtok_r (NULL, " ", &save_ptr), i++)
-	{
-		argv[i] = token;
-		if_->R.rdi = i+1; 
-		
-	}
-
-	char *addrs[32];
-	int len;
-	// 2. 단어를 스택의 맨위에 넣는다.
-	for (int i = if_->R.rdi - 1; i >= 0; i--)
-	{
-		len = strlen(argv[i])+1;
-		cursor -= len;
-		strlcpy(cursor, argv[i], len);
-		addrs[i] = cursor;
-	}
-
-	// 3. 스택을 8바이트로 정렬한다.
-	while ((uint64_t)cursor % 8 != 0)
-		cursor--;
-
-	// 4. 널 포인터 센티널을 넣는다.
-	cursor -= 8;
-	*(char**)cursor = 0;
-
-	// 5. 스택에 주소를 넣는다.
-	for (int i = if_->R.rdi - 1; i >= 0; i--)
-	{
-		cursor -= 8;
-		*(char**)cursor = addrs[i];
-	}
-
-	// 6. 가짜 반환 주소를 넣는다.
-	cursor -= 8;
-	*(char**)cursor = (void *)(0);
-	if_->rsp = USER_STACK;
-	// hex_dump(if_->rsp, if_->rsp, USER_STACK - if_->rsp, true);
-	hex_dump(if_->rsp, &argv, 64, true);
-}
-
-/* Loads an ELF executable from FILE_NAME into the current thread.
- * Stores the executable's entry point into *RIP
- * and its initial stack pointer into *RSP.
- * Returns true if successful, false otherwise. */
-static bool
-load (const char *file_name, struct intr_frame *if_) {
+/* FILE_NAME에서 현재 스레드로 ELF 실행 파일을 로드한다.
+ * 실행 파일의 진입점을 *RIP에, 초기 스택 포인터를 *RSP에 저장한다.
+ * 성공하면 true, 실패하면 false를 반환한다.
+ */
+static bool load (const char *file_name, struct intr_frame *if_) {
 	struct thread *t = thread_current ();
 	struct ELF ehdr;
 	struct file *file = NULL;
 	off_t file_ofs;
 	bool success = false;
 	int i;
-
+	
 	/* Allocate and activate page directory. */
 	t->pml4 = pml4_create ();
 	if (t->pml4 == NULL)
 		goto done;
-	process_activate (thread_current ());
+	process_activate (thread_current ());	
 
 	/* Open executable file. */
 	file = filesys_open (file_name);
@@ -682,3 +656,37 @@ setup_stack (struct intr_frame *if_) {
 	return success;
 }
 #endif /* VM */
+
+void set_userstack(char **argv, int argc, struct intr_frame *if_) {
+	char *addrs[64];
+	int size;
+	// 2. 단어를 스택의 맨위에 넣는다.
+	for (int i = argc - 1; i >= 0; i--)
+	{
+		size = strlen(argv[i]) + 1;
+		if_->rsp -= size;
+		memcpy(if_->rsp, argv[i], size);
+		addrs[i] = if_->rsp;
+	}
+
+	// 3. 스택을 8바이트로 정렬한다.
+	while (if_->rsp % 8 != 0) {
+		if_->rsp--;
+		memset(if_->rsp, 0, sizeof(char));
+	}
+
+	// 4. 널 포인터 센티널을 넣는다.
+	if_->rsp -= 8;
+	memset(if_->rsp, 0, sizeof(char **));
+
+	// 5. 스택에 주소를 넣는다.
+	for (int i = argc - 1; i >= 0; i--)
+	{
+		if_->rsp -= 8;
+		memcpy(if_->rsp, &addrs[i], sizeof(char **));
+	}
+
+	// 6. 가짜 반환 주소를 넣는다.
+	if_->rsp -= 8;
+	memset(if_->rsp, 0, sizeof(void *));
+}
