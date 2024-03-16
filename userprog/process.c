@@ -34,10 +34,10 @@ process_init (void) {
 }
 
 /* process_create_initd - FILE_NAME에서 로드된 "initd"라는 첫 번째 userland 프로그램을 시작한다.
- * 
+ *
  * process_create_initd()가 반환되기 전에 새 스레드가 스케줄될 수 있으며 종료될 수도 있다.
  * initd의 스레드 ID를 반환하거나 스레드를 생성할 수 없는 경우 TID_ERROR를 반환한다.
- * 
+ *
  * 이 함수는 한 번만 호출되어야 한다.
  */
 tid_t process_create_initd (const char *file_name) {
@@ -51,7 +51,7 @@ tid_t process_create_initd (const char *file_name) {
 		return TID_ERROR;
 	strlcpy (fn_copy, file_name, PGSIZE);
 
-	// file_name을 나누어 첫 번째 단어를 가져온다.
+	/* Project 2: COmmand Line Parsing */
 	char *save_ptr;
 	strtok_r(file_name, " ",  &save_ptr);
 
@@ -63,6 +63,7 @@ tid_t process_create_initd (const char *file_name) {
 }
 
 /* initd - 첫 번째 사용자 프로세스를 시작하는 스레드 함수
+ * 이 다음 프로세스부터는 fork()를 사용하여 생성한다.
  */
 static void initd (void *f_name) {
 #ifdef VM
@@ -117,16 +118,16 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 }
 #endif
 
-/* A thread function that copies parent's execution context.
- * Hint) parent->tf does not hold the userland context of the process.
- *       That is, you are required to pass second argument of process_fork to
- *       this function. */
+/* __do_fork - 부모의 실행 컨텍스트를 복사하는 스레드 함수이다.
+ * 힌트: parent->tf는 프로세스의 userland 컨텍스트를 보유하지 않는다.
+ * 즉, 이 함수에 process_fork()의 두 번째 인수를 전달해야 한다.
+ */
 static void
 __do_fork (void *aux) {
 	struct intr_frame if_;
 	struct thread *parent = (struct thread *) aux;
 	struct thread *current = thread_current ();
-	/* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
+	/* TODO: 어떻게든 parent_if를 전달해야 한다.(즉, process_fork()의 if_) */
 	struct intr_frame *parent_if;
 	bool succ = true;
 
@@ -149,10 +150,10 @@ __do_fork (void *aux) {
 #endif
 
 	/* TODO: Your code goes here.
-	 * TODO: Hint) To duplicate the file object, use `file_duplicate`
-	 * TODO:       in include/filesys/file.h. Note that parent should not return
-	 * TODO:       from the fork() until this function successfully duplicates
-	 * TODO:       the resources of parent.*/
+	 * 파일 객체를 복제하려면 include/filesys/file.h의 file_duplicate를 사용하십시오.
+	 * 이 함수가 부모의 자원을 성공적으로 복제할 때까지 
+	 * 부모는 fork()에서 반환되지 않아야 한다.
+	 */
 
 	process_init ();
 
@@ -164,7 +165,7 @@ error:
 }
 
 /* process_exec - 현재 실행 컨텍스트를 f_name으로 전환한다.
- * 실패 시 -1을 반환한다. 
+ * 실패 시 -1을 반환한다.
  */
 int process_exec (void *f_name) {
 	char *file_name = f_name;
@@ -181,7 +182,7 @@ int process_exec (void *f_name) {
 	/* 먼저 현재 컨텍스트를 죽인다. */
 	process_cleanup ();
 
-	// 1. 명령을 단어로 나눈다.
+	/* Project 2: Command to Word */
 	char *argv[64];
 	char *token, *save_ptr;
 	int argc = 0;
@@ -191,50 +192,54 @@ int process_exec (void *f_name) {
 	/* 그리고 바이너리를 불러온다. */
 	success = load(file_name, &_if);
 
+	/* Project 2: Argument Passing*/
 	set_userstack(argv, argc, &_if);
 	_if.R.rdi = argc;
 	_if.R.rsi = _if.rsp + 8;
-	hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
+	// hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
 
 	/* 로드에 실패하면 종료한다. */
 	palloc_free_page (file_name);
 	if (!success)
 		return -1;
 
-	/* 전환된 프로세스를 시작한다. */
+	/* 전환된 사용자 프로세스를 시작한다. */
 	do_iret (&_if);
 	NOT_REACHED ();
 }
 
 
-/* Waits for thread TID to die and returns its exit status.  If
- * it was terminated by the kernel (i.e. killed due to an
- * exception), returns -1.  If TID is invalid or if it was not a
- * child of the calling process, or if process_wait() has already
- * been successfully called for the given TID, returns -1
- * immediately, without waiting.
+/* 스레드 tid가 종료될 때까지 기다렸다가 종료 상태를 반환한다.
+ * 커널에 의해 종료된 경우 (즉, 예외로 인해 종료된 경우) -1을 반환한다.
  *
- * This function will be implemented in problem 2-2.  For now, it
- * does nothing. */
-int
-process_wait (tid_t child_tid UNUSED) {
-	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
-	 * XXX:       to add infinite loop here before
-	 * XXX:       implementing the process_wait. */
-	for (int i =0; i <= 10000000000000; i++){
+ * tid가 유효하지 않거나 호출 프로세스의 자식이 아닌 경우,
+ * 또는 지정된 tid에 대해 process_wait()가 이미 성공적으로 호출된 경우
+ * 즉시 -1을 반환하고 기다리지 않는다.
+ *
+ * 이 기능은 문제 2-2에서 구현될 예정이다.
+ * 지금은 아무것도 하지 않는다.
+ */
+int process_wait (tid_t child_tid) {
+	/* 프로세스_대기(initd)를 실행하면 핀토가 종료되므로,
+	프로세스_대기를 구현하기 전에
+	여기에 무한 루프를 추가하는 것이 좋습니다. */
+	// sema down, up 사용
+	for (int i = 0; i <= 2147483646; i++){
 		continue;
 	}
 	return -1;
 }
 
-/* Exit the process. This function is called by thread_exit (). */
+/* process_exit - 현재 프로세스를 종료한다.
+ * 이 함수는 thread_exit()에 의해 호출된다.
+ */
 void
 process_exit (void) {
 	struct thread *curr = thread_current ();
 	/* TODO: Your code goes here.
-	 * TODO: Implement process termination message (see
-	 * TODO: project2/process_termination.html).
-	 * TODO: We recommend you to implement process resource cleanup here. */
+	 * 프로세스 종료 메시지를 구현한다. (project2/process_termination.html 참조)
+	 * 여기서 프로세스 자원 정리를 구현하는 것을 권장한다.
+	 */
 
 	process_cleanup ();
 }
@@ -253,13 +258,12 @@ process_cleanup (void) {
 	 * to the kernel-only page directory. */
 	pml4 = curr->pml4;
 	if (pml4 != NULL) {
-		/* Correct ordering here is crucial.  We must set
-		 * cur->pagedir to NULL before switching page directories,
-		 * so that a timer interrupt can't switch back to the
-		 * process page directory.  We must activate the base page
-		 * directory before destroying the process's page
-		 * directory, or our active page directory will be one
-		 * that's been freed (and cleared). */
+		/* 여기서 올바른 순서가 중요하다.
+		 * 타이머 인터럽트가 프로세스 페이지 디렉토리로 다시 전환되지 않도록
+		 * 페이지 디렉토리를 전환하기 전에 cur->pagedir를 NULL로 설정해야 한다.
+		 * 프로세스 페이지 디렉토리를 파괴하기 전에 기본 페이지 디렉토리를 활성화해야 한다.
+		 * 그렇지 않으면 활성 페이지 디렉토리는 해제(및 지워짐)된 페이지 디렉토리가 될 것이다.
+		 */
 		curr->pml4 = NULL;
 		pml4_activate (NULL);
 		pml4_destroy (pml4);
@@ -347,12 +351,12 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 	off_t file_ofs;
 	bool success = false;
 	int i;
-	
+
 	/* Allocate and activate page directory. */
 	t->pml4 = pml4_create ();
 	if (t->pml4 == NULL)
 		goto done;
-	process_activate (thread_current ());	
+	process_activate (thread_current ());
 
 	/* Open executable file. */
 	file = filesys_open (file_name);
@@ -642,16 +646,17 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 	return true;
 }
 
-/* Create a PAGE of stack at the USER_STACK. Return true on success. */
+/* setup_stack - USER_STACK에 스택의 PAGE를 생성한다. 성공하면 true를 반환한다.
+ */
 static bool
 setup_stack (struct intr_frame *if_) {
 	bool success = false;
 	void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
 
-	/* TODO: Map the stack on stack_bottom and claim the page immediately.
-	 * TODO: If success, set the rsp accordingly.
-	 * TODO: You should mark the page is stack. */
-	/* TODO: Your code goes here */
+	/* 스택을 stack_bottom에 매핑하고 즉시 페이지를 요구한다.
+	 * 성공하면 그에 따라 rsp를 설정한다.
+	 * 페이지가 스택임을 표시해야 한다.
+	 */
 
 	return success;
 }
