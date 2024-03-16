@@ -544,6 +544,7 @@ static void init_thread(struct thread *t, const char *name, int priority)
 	t->recent_cpu = 0;
 	t->magic = THREAD_MAGIC;
 	list_init(&t->donations);
+	t->exit_status = 0;
 	if (strcmp(name, "idle"))
 		list_push_back(&all_list, &t->a_elem);
 }

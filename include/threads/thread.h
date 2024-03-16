@@ -119,6 +119,10 @@ struct thread {
 	/* Owned by thread.c. */
 	struct intr_frame tf;               /* Information for switching */
 	unsigned magic;                     /* Detects stack overflow. */
+
+	/* Project 2 */
+	struct file **fdt; // file descriptor table
+	int exit_status;
 };
 
 /* If false (default), use round-robin scheduler.
