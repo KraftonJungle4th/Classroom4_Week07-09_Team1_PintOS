@@ -15,7 +15,23 @@
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
-
+void halt(void);
+void exit(int status);
+pid_t fork(const char *thread_name);
+int exec(const char *cmd_line);
+int wait(pid_t pid);
+bool create(const char *file, unsigned initial_size);
+bool remove(const char *file);
+int open(const char *file);
+int filesize(int fd);
+int read(int fd, void *buffer, unsigned size);
+int write(int fd, const void *buffer, unsigned size);
+void seek(int fd, unsigned position);
+unsigned tell(int fd);
+void close(int fd);
+void check_address(uintptr_t addr);
+int add_file_to_fd(struct file *file);
+struct file *get_file_from_fd(int fd);
 /* System call.
  *
  * Previously system call services was handled by the interrupt handler
