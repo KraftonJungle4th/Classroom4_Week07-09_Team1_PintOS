@@ -7,9 +7,25 @@
 #include "userprog/gdt.h"
 #include "threads/flags.h"
 #include "intrinsic.h"
+#include "include/threads/init.h"
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
+
+void halt (void);
+void exit (int status);
+pid_t fork (const char *thread_name);
+int exec (const char *cmd_line);
+int wait (pid_t pid);
+bool create (const char *file, unsigned initial_size);
+bool remove (const char *file);
+int open (const char *file);
+int filesize (int fd);
+int read (int fd, void *buffer, unsigned size);
+int write (int fd, const void *buffer, unsigned size);
+void seek (int fd, unsigned position);
+unsigned tell (int fd);
+void close (int fd);
 
 /* System call.
  *
@@ -39,8 +55,13 @@ syscall_init (void) {
 
 /* The main system call interface
  * 1. 포인터가 유효하지 않은 경우
+ * -> 현재 스택의 상단의 주소가 유저의 가상 주소가 아니면 종료
  * 2. 포인터가 커널 영역에 있는 경우
+ * -> 
  * 3. 포인터가 가리키는 블록이 커널 영역에 부분적으로 있는 경우
+ * 
+ * 커널에서 시스템 호출이 발생 했을 때, 실행된다.
+ * 시스템 호출을 처리하기 전에 유효한 주소인지 확인한 후, 시스템 호출이 안전하게 실행될 수 있도록 한다.
  */
 void syscall_handler (struct intr_frame *f) {
 	
@@ -59,6 +80,15 @@ void syscall_handler (struct intr_frame *f) {
 		thread_exit();
 	}
 
+	uint64_t syscall_num = f->R.rax;
+	if (syscall_num == SYS_HALT) {
+		halt();
+	}
+
 	printf ("system call!\n");
 	thread_exit ();
+}
+
+void halt (void) {
+	power_off();
 }
