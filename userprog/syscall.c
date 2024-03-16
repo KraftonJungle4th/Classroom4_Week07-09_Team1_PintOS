@@ -133,15 +133,16 @@ void halt(void) {
  */
 void exit(int status) {
 	/* Project 2: Process Termination Message */
-	struct thread *cur = thread_current();
-	printf("%s: exit(%d)\n", cur->name, cur->exit_status);
+	struct thread *t = thread_current();
+	printf("%s: exit(%d)\n", t->name, t->exit_status);
 
 	/* 프로세스가 종료되는 경우 모든 파일을 암시적으로 닫는다.*/
 	int fd = 2;
-	while (cur->fdt[fd] != NULL) {
-		close(fd);
-		fd++;
-	}
+	// while (t->fdt[fd] != NULL) {
+	// 	printf("close fd: %d\n", fd);
+	// 	close(fd);
+	// 	fd++;
+	// }
 	thread_exit();
 }
 
