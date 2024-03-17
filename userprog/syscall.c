@@ -229,7 +229,7 @@ int open(const char *file) {
 	if (file_open == NULL)
 		return -1;
 
-	int fd = add_file_to_fd(file_open);
+	int fd = add_file_to_fdt(file_open);
 	if (fd == -1)
 		file_close(file_open);
 
@@ -318,15 +318,33 @@ void check_address(uintptr_t addr) {
 	}
 }
 
-/* add_file_to_fd - file을 fdt에 추가하고 fd를 반환한다.
+/* add_file_to_fdt - file을 fdt에 추가하고 fd를 반환한다.
  */
-int add_file_to_fd(struct file *file) {
+int add_file_to_fdt(struct file *file) {
 	struct thread *t = thread_current();
 	int fd = 2;
 	while (t->fdt[fd] != NULL && fd < 128) {
 		fd++;
 	}
+	if (fd >= 128) 
+		return -1;
+	t->fdt[fd] = file;
 
-	printf ("system call!\n");
-	thread_exit ();
+	return fd;
+}
+
+
+/* get_file_from_fd - fd에 해당하는 file을 반환한다.
+ */
+struct file *get_file_from_fd(int fd) {
+	struct thread *t = thread_current();
+	struct file *_file = t->fdt[fd];
+	if (_file == NULL) 
+	{
+		return NULL;
+	}
+	else
+	{
+		return _file;
+	}
 }
