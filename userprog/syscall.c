@@ -30,7 +30,7 @@ void seek(int fd, unsigned position);
 unsigned tell(int fd);
 void close(int fd);
 void check_address(uintptr_t addr);
-int add_file_to_fd(struct file *file);
+int add_file_to_fdt(struct file *file);
 struct file *get_file_from_fd(int fd);
 
 
@@ -66,8 +66,6 @@ syscall_init (void) {
  * 3. 포인터가 가리키는 블록이 커널 영역에 부분적으로 있는 경우
  */
 void syscall_handler (struct intr_frame *f) {
-	check_address(f->rsp);
-
 	uint64_t syscall_num = f->R.rax;
 
 	switch (syscall_num)
@@ -79,37 +77,37 @@ void syscall_handler (struct intr_frame *f) {
 		exit(f->R.rdi);
 		break;
 	case SYS_FORK:
-		fork(f->R.rdi);
+		f->R.rax = fork(f->R.rdi);
 		break;
 	case SYS_EXEC:
-		exec(f->R.rdi);
+		f->R.rax = exec(f->R.rdi);
 		break;
 	case SYS_WAIT:
-		wait(f->R.rdi);
+		f->R.rax = wait(f->R.rdi);
 		break;
 	case SYS_CREATE:
-		create(f->R.rdi, f->R.rsi);
+		f->R.rax = create(f->R.rdi, f->R.rsi);
 		break;
 	case SYS_REMOVE:
-		remove(f->R.rdi);
+		f->R.rax = remove(f->R.rdi);
 		break;
 	case SYS_OPEN:
-		open(f->R.rdi);
+		f->R.rax = open(f->R.rdi);
 		break;
 	case SYS_FILESIZE:
-		filesize(f->R.rdi);
+		f->R.rax = filesize(f->R.rdi);
 		break;
 	case SYS_READ:
-		read(f->R.rdi, f->R.rsi, f->R.rdx);
+		f->R.rax = read(f->R.rdi, f->R.rsi, f->R.rdx);
 		break;
 	case SYS_WRITE:
-		write(f->R.rdi, f->R.rsi, f->R.rdx);
+		f->R.rax = write(f->R.rdi, f->R.rsi, f->R.rdx);
 		break;
 	case SYS_SEEK:
 		seek(f->R.rdi, f->R.rsi);
 		break;
 	case SYS_TELL:
-		tell(f->R.rdi);
+		f->R.rax = tell(f->R.rdi);
 		break;
 	case SYS_CLOSE:
 		close(f->R.rdi);
@@ -134,7 +132,7 @@ void halt(void) {
 void exit(int status) {
 	/* Project 2: Process Termination Message */
 	struct thread *t = thread_current();
-	printf("%s: exit(%d)\n", t->name, t->exit_status);
+	printf("%s: exit(%d)\n", t->name, status);
 
 	/* 프로세스가 종료되는 경우 모든 파일을 암시적으로 닫는다.*/
 	int fd = 2;
@@ -221,12 +219,13 @@ bool remove(const char *file) {
  * 추가 작업을 수행하려면 0부터 시작하는 정수를 반환하는 Linux 체계를 따라야 한다.
  */
 int open(const char *file) {
+	printf("open called\n");
 	check_address(file);
 	struct file *file_open = filesys_open(file);
 	if (file_open == NULL)
 		return -1;
 
-	int fd = add_file_to_fd(file_open);
+	int fd = add_file_to_fdt(file_open);
 	if (fd == -1)
 		file_close(file_open);
 
@@ -261,12 +260,17 @@ int read(int fd, void *buffer, unsigned size) {
  * 그렇지 않으면 다른 프로세스에서 출력한 텍스트 줄이 콘솔에 인터리빙되어 사람이 읽는 사람과 채점 스크립트 모두를 혼란스럽게 만들 수 있습니다.
  */
 int write(int fd, const void *buffer, unsigned size) {
-	if (fd == STDOUT_FILENO) {
+	if (fd == STDIN_FILENO) {
+		return -1;
+	}
+	else if (fd == STDOUT_FILENO) {
 		putbuf(buffer, size);
 		return size;
 	}
-	
-	return size;
+	else {
+		struct file *_file = get_file_from_fd(fd);
+		return file_write(_file, buffer, size);
+	}	
 }
 
 /* seek - 열린 파일 fd에서 읽거나 쓸 다음 바이트를 파일 시작부터 바이트 단위로 표시되는 위치로 변경합니다(따라서 위치가 0이면 파일의 시작입니다). 
@@ -299,31 +303,34 @@ void close(int fd) {
 /* check_address - 주소가 유효한지 확인한다.
  */
 void check_address(uintptr_t addr) {
+	if (addr == NULL) {
+		exit(-1);
+	}
+	if (pml4_get_page(thread_current()->pml4, (void *)addr) == NULL) {
+		exit(-1);
+	}
 	if (!is_user_vaddr(addr)) {
-		printf("rsp is not in user vaddr\n");
 		exit(-1);
 	}
 
 	if (KERN_BASE < addr || addr < 0) {
-		printf("rsp is in kernel vaddr\n");
 		exit(-1);
 	}
 
 	if (KERN_BASE < addr + 8 || addr + 8 < 0) {
-		printf("rsp partially is in kernel vaddr\n");
 		exit(-1);
 	}
 }
 
-/* add_file_to_fd - file을 fdt에 추가하고 fd를 반환한다.
+/* add_file_to_fdt - file을 fdt에 추가하고 fd를 반환한다.
  */
-int add_file_to_fd(struct file *file) {
+int add_file_to_fdt(struct file *file) {
 	struct thread *t = thread_current();
 	int fd = 2;
-	while (t->fdt[fd] != NULL && fd < 128) {
+	while (t->fdt[fd] != NULL && fd < FDT_SIZE) {
 		fd++;
 	}
-	if (fd >= 128) 
+	if (fd >= FDT_SIZE) 
 		return -1;
 	t->fdt[fd] = file;
 
