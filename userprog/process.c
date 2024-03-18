@@ -84,6 +84,7 @@ static void initd (void *f_name) {
 	NOT_REACHED ();
 }
 
+
 /* process_fork - 현재 프로세스를 'name'으로 복제한다.
  * 새 프로세스의 tid를 반환하거나 스레드를 생성할 수 없는 경우 TID_ERROR를 반환한다.
  */
@@ -106,21 +107,39 @@ static bool duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	bool writable;
 
 	/* 1. TODO: If the parent_page is kernel page, then return immediately. */
+	/* 부모 페이지가 커널 페이지인 경우 즉시 반환합니다. */
+	if (is_kernel_vaddr (va)){
+		return false;
+	}
 
 	/* 2. Resolve VA from the parent's page map level 4. */
+	/* 부모의 페이지 맵 레벨 4에서 VA를 해결합니다.*/
 	parent_page = pml4_get_page (parent->pml4, va);
+	if(parent_page == NULL){
+		return false;
+	}
 
 	/* 3. TODO: Allocate new PAL_USER page for the child and set result to
 	 *    TODO: NEWPAGE. */
-
+	/* 해석: 자식을 위해 새로운 PAL_USER 페이지를 할당하고 결과를 NEWPAGE에 설정합니다.*/
+	newpage = palloc_get_page (PAL_USER);
+	if(newpage == NULL){
+		return false;
+	}
 	/* 4. TODO: Duplicate parent's page to the new page and
 	 *    TODO: check whether parent's page is writable or not (set WRITABLE
 	 *    TODO: according to the result). */
+	/* 해석: 부모의 페이지를 새 페이지로 복제하고 부모의 페이지가 쓰기 가능한지 여부를 확인하십시오 (결과에 따라 WRITABLE을 설정하십시오). */
+	memcpy (newpage, parent_page, PGSIZE);
+	writable = is_writable (pte);
 
-	/* 5. Add new page to child's page table at address VA with WRITABLE
-	 *    permission. */
+	/* 5. Add new page to child's page table at address VA with WRITABLE permission. */
+	/* 해석: 새 페이지를 VA 주소에 WRITABLE 권한으로 자식의 페이지 테이블에 추가하십시오. */
+
 	if (!pml4_set_page (current->pml4, va, newpage, writable)) {
 		/* 6. TODO: if fail to insert page, do error handling. */
+		/* 해석: 페이지 삽입에 실패하면 오류 처리를 수행하십시오. */
+		return false;
 	}
 	return true;
 }
