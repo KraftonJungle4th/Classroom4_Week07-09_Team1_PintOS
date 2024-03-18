@@ -1,5 +1,7 @@
 #ifndef THREADS_THREAD_H
 #define THREADS_THREAD_H
+#define FDT_PAGES 3
+#define FDT_COUNT_LIMIT FDT_PAGES *(1<<9)
 
 #include <debug.h>
 #include <list.h>
@@ -106,6 +108,11 @@ struct thread {
 	struct list_elem a_elem; // all_list를 위한 list_elem
 	int nice;
 	int recent_cpu;
+
+	/* For System Call */
+	int exit_status; // 프로세스의 종료 상태
+	struct file **fd_table; // 파일 디스크립터 테이블
+	int fd_index;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
