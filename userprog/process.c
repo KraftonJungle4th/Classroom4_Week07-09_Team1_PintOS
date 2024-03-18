@@ -17,6 +17,7 @@
 #include "threads/thread.h"
 #include "threads/mmu.h"
 #include "threads/vaddr.h"
+#include "threads/synch.h"
 #include "intrinsic.h"
 #ifdef VM
 #include "vm/vm.h"
@@ -27,10 +28,16 @@ static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
 static void __do_fork (void *);
 void set_userstack(char **argv, int argc, struct intr_frame *if_);
+
+/* initd와 fork를 통해 생성되는 모든 프로세스들
+ */
+static struct list processes;
+
 /* General process initializer for initd and other process. */
-static void
-process_init (void) {
+static void process_init (void) {
 	struct thread *current = thread_current ();
+	list_init(&processes);
+	list_push_back(&processes, &current->p_elem);
 }
 
 /* process_create_initd - FILE_NAME에서 로드된 "initd"라는 첫 번째 userland 프로그램을 시작한다.
@@ -77,23 +84,22 @@ static void initd (void *f_name) {
 	NOT_REACHED ();
 }
 
-/* Clones the current process as `name`. Returns the new process's thread id, or
- * TID_ERROR if the thread cannot be created. 
- * 현재 프로세스를 `name`으로 복제합니다. 
- * 새 프로세스의 스레드 ID를 반환하거나 스레드를 생성할 수 없는 경우 * TID_ERROR를 반환합니다.
+
+/* process_fork - 현재 프로세스를 'name'으로 복제한다.
+ * 새 프로세스의 tid를 반환하거나 스레드를 생성할 수 없는 경우 TID_ERROR를 반환한다.
  */
-tid_t
-process_fork (const char *name, struct intr_frame *if_ UNUSED) {
-	/* Clone current thread to new thread.*/
-	return thread_create (name,
-			PRI_DEFAULT, __do_fork, thread_current ());
+tid_t process_fork (const char *name, struct intr_frame *if_ UNUSED) {
+	// 현재 스레드를 새 스레드로 복제
+	tid_t tid = thread_create (name, PRI_DEFAULT, __do_fork, thread_current());
+
+	return tid;
 }
 
 #ifndef VM
-/* Duplicate the parent's address space by passing this function to the
- * pml4_for_each. This is only for the project 2. */
-static bool
-duplicate_pte (uint64_t *pte, void *va, void *aux) {
+/* duplicate_pte - 이 함수를 pml4_for_each에 전달하여 부모의 주소 공간을 복제한다.
+ * 이 함수는 project 2 전용이다.
+ */
+static bool duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	struct thread *current = thread_current ();
 	struct thread *parent = (struct thread *) aux;
 	void *parent_page;
@@ -146,10 +152,9 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 static void
 __do_fork (void *aux) {
 	struct intr_frame if_;
-	struct thread *parent = (struct thread *) aux;
-	struct thread *current = thread_current ();
-	/* TODO: 어떻게든 parent_if를 전달해야 한다.(즉, process_fork()의 if_) */
-	struct intr_frame *parent_if;
+	struct thread *parent = (struct thread *)aux;
+	struct thread *current = thread_current();
+	struct intr_frame *parent_if = &parent->parent_if;
 	bool succ = true;
 
 	/* 1. Read the cpu context to local stack. */
@@ -175,6 +180,11 @@ __do_fork (void *aux) {
 	 * 이 함수가 부모의 자원을 성공적으로 복제할 때까지 
 	 * 부모는 fork()에서 반환되지 않아야 한다.
 	 */
+	int idx = 2;
+	while (parent->fdt[idx] != NULL && idx < FDT_SIZE) {
+		current->fdt[idx] = file_duplicate(parent->fdt[idx]);
+		idx++;
+	}
 
 	process_init ();
 
