@@ -224,7 +224,7 @@ int process_wait (tid_t child_tid) {
 	프로세스_대기를 구현하기 전에
 	여기에 무한 루프를 추가하는 것이 좋습니다. */
 	// sema down, up 사용
-	for (int i = 0; i <= 2147483646; i++){
+	for (unsigned long long i = 0; i <= 15000000000; i++){
 		continue;
 	}
 	return -1;
