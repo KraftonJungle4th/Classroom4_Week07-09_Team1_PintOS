@@ -12,6 +12,7 @@
 #include "userprog/process.h"
 #include "include/lib/stdio.h"
 #include "include/lib/user/syscall.h"
+#include "devices/input.h"
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -222,7 +223,6 @@ bool remove(const char *file) {
  * 추가 작업을 수행하려면 0부터 시작하는 정수를 반환하는 Linux 체계를 따라야 한다.
  */
 int open(const char *file) {
-	printf("open called\n");
 	check_address(file);
 	struct file *file_open = filesys_open(file);
 	if (file_open == NULL)
@@ -239,8 +239,12 @@ int open(const char *file) {
  */
 int filesize(int fd) {
 	struct file *_file = get_file_from_fd(fd);
-	
-	return file_length(_file);
+	if (_file == NULL) {
+		return -1;
+	}
+	else {
+		return file_length(_file);
+	}
 }
 
 /* read - fd로 열린 파일에서 buffer로 size 바이트를 읽는다.
@@ -249,8 +253,14 @@ int filesize(int fd) {
  * fd 0은 input_getc()를 사용하여 키보드에서 읽는다. 
  */
 int read(int fd, void *buffer, unsigned size) {
+	check_address(buffer);
 	struct file *_file = get_file_from_fd(fd);
-	// TODO: 파일을 읽을 수 없는 경우 -1 반환 처리
+	if (_file == NULL) {
+		return -1;
+	}
+	if (fd == STDIN_FILENO) {
+		uint8_t key = input_getc();
+	}
 
 	return file_read(_file, buffer, size);
 }
@@ -263,6 +273,7 @@ int read(int fd, void *buffer, unsigned size) {
  * 그렇지 않으면 다른 프로세스에서 출력한 텍스트 줄이 콘솔에 인터리빙되어 사람이 읽는 사람과 채점 스크립트 모두를 혼란스럽게 만들 수 있습니다.
  */
 int write(int fd, const void *buffer, unsigned size) {
+	check_address(buffer);
 	if (fd == STDIN_FILENO) {
 		return -1;
 	}
@@ -272,6 +283,9 @@ int write(int fd, const void *buffer, unsigned size) {
 	}
 	else {
 		struct file *_file = get_file_from_fd(fd);
+		if (_file == NULL) {
+			return -1;
+		}
 		return file_write(_file, buffer, size);
 	}	
 }
@@ -300,7 +314,14 @@ unsigned tell(int fd) {
  * 열려 있는 모든 파일 기술자가 닫혀야 한다.
  */
 void close(int fd) {
-	file_close(get_file_from_fd(fd));
+	struct file *_file = get_file_from_fd(fd);
+	if (_file == NULL) {
+		return;
+	}
+	else {
+		file_close(_file);
+		remove_file_from_fdt(fd);
+	}
 }
 
 /* check_address - 주소가 유효한지 확인한다.
@@ -339,11 +360,19 @@ int add_file_to_fdt(struct file *file) {
 
 	return fd;
 }
+/* remove_file_from_fdt - fd에 해당하는 file을 fdt에서 제거한다.
+ */
+void remove_file_from_fdt(int fd) {
+	struct thread *t = thread_current();
+	t->fdt[fd] = NULL;
+}
 
 
 /* get_file_from_fd - fd에 해당하는 file을 반환한다.
  */
 struct file *get_file_from_fd(int fd) {
+	if (fd < 2 || fd >= FDT_SIZE) 
+		return NULL;
 	struct thread *t = thread_current();
 	struct file *_file = t->fdt[fd];
 	if (_file == NULL) 
