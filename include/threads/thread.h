@@ -127,6 +127,8 @@ struct thread {
 	/* Project 2 */
 	struct file **fdt; // file descriptor table
 	int exit_status;
+	struct list_elem p_elem; // process list element
+	struct intr_frame *parent_if; // parent intr_frame
 };
 
 /* If false (default), use round-robin scheduler.
