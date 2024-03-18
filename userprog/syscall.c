@@ -33,8 +33,6 @@ void close(int fd);
 void check_address(uintptr_t addr);
 int add_file_to_fdt(struct file *file);
 struct file *get_file_from_fd(int fd);
-
-
 /* System call.
  *
  * Previously system call services was handled by the interrupt handler
@@ -63,8 +61,13 @@ syscall_init (void) {
 
 /* The main system call interface
  * 1. 포인터가 유효하지 않은 경우
+ * -> 현재 스택의 상단의 주소가 유저의 가상 주소가 아니면 종료
  * 2. 포인터가 커널 영역에 있는 경우
+ * -> 
  * 3. 포인터가 가리키는 블록이 커널 영역에 부분적으로 있는 경우
+ * 
+ * 커널에서 시스템 호출이 발생 했을 때, 실행된다.
+ * 시스템 호출을 처리하기 전에 유효한 주소인지 확인한 후, 시스템 호출이 안전하게 실행될 수 있도록 한다.
  */
 void syscall_handler (struct intr_frame *f) {
 	uint64_t syscall_num = f->R.rax;
@@ -363,6 +366,7 @@ void remove_file_from_fdt(int fd) {
 	struct thread *t = thread_current();
 	t->fdt[fd] = NULL;
 }
+
 
 /* get_file_from_fd - fd에 해당하는 file을 반환한다.
  */
