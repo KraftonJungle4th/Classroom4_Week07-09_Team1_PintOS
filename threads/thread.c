@@ -239,6 +239,10 @@ tid_t thread_create(const char *name, int priority, thread_func *function, void 
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
 
+	t->fdt = palloc_get_multiple(PAL_ZERO & PAL_ASSERT, FDT_PAGES);
+	t->fdt[0] = 1;
+	t->fdt[1] = 2;
+
 	/* Add to run queue. */
 	thread_unblock(t);
 
@@ -555,6 +559,9 @@ static void init_thread(struct thread *t, const char *name, int priority)
 	t->recent_cpu = 0;
 	t->magic = THREAD_MAGIC;
 	list_init(&t->donations);
+	/* Project 2: System Call */
+	t->exit_status = 0;
+
 	if (strcmp(name, "idle"))
 		list_push_back(&all_list, &t->a_elem);
 }
