@@ -33,6 +33,8 @@ void close(int fd);
 void check_address(uintptr_t addr);
 int add_file_to_fdt(struct file *file);
 struct file *get_file_from_fd(int fd);
+
+static struct intr_frame *frame;
 /* System call.
  *
  * Previously system call services was handled by the interrupt handler
@@ -70,8 +72,9 @@ syscall_init (void) {
  * 시스템 호출을 처리하기 전에 유효한 주소인지 확인한 후, 시스템 호출이 안전하게 실행될 수 있도록 한다.
  */
 void syscall_handler (struct intr_frame *f) {
+	frame = f;
+	
 	uint64_t syscall_num = f->R.rax;
-
 	switch (syscall_num)
 	{
 	case SYS_HALT:
@@ -136,7 +139,7 @@ void halt(void) {
 void exit(int status) {
 	/* Project 2: Process Termination Message */
 	struct thread *t = thread_current();
-	printf("%s: exit(%d)\n", t->name, status);
+	t->exit_status = status;
 
 	/* 프로세스가 종료되는 경우 모든 파일을 암시적으로 닫는다.*/
 	int fd = 2;
@@ -148,9 +151,22 @@ void exit(int status) {
 	thread_exit();
 }
 
+/* fork - 현재 프로세스의 복제본인 새 프로세스를 THREAD_NAME이라는 이름으로 생성한다.
+ * 호출자가 저장한 레지스터인 %rbx, %rsp, %rbp, %r12 ~ %15를 제외한 레지스터의 값은 복제할 필요가 없다.
+ * 자식 프로세스의 pid를 반환해야 하며, 그렇지 않으면 유효한 pid가 아닐 수 있다.
+ * 자식 프로세스의 반환 값은 0이어야 한다.
+ * 자식 프로세스는 fd와 가상 메모리 공간을 포함한 중복된 자원을 가지고 있어야 한다.
+ * 부모 프로세스는 자식 프로세스가 성공적으로 복제되었는지 알기 전까지 fork에서 반환하면 안된다.
+ * 즉, 자식 프로세스가 자원을 복제하는 데 실패하면 부모의 fork() 호출은 TID_ERROR을 반환해야 한다.
+ * 
+ * 이 함수는 threads/mmu.c의 pml4_for_each()를 사용하여 
+ * 해당 페이지 테이블 구조를 포함한 전체 사용자 메모리 공간을 복사하지만, 
+ * 전달된 pte_for_each_func의 누락된 부분을 채워야 한다. (가상 주소 참조)
+ */
 pid_t fork(const char *thread_name) {
-	printf("fork called ok\n");
-	return 0;
+	pid_t forked_process_pid = process_fork(thread_name, frame);
+
+	return forked_process_pid;
 }
 
 /* exec - 주어진 인수를 전달하여 현재 프로세스를 cmd_line에 지정된 이름의 실행 파일로 변경합니다. 
@@ -164,23 +180,24 @@ int exec(const char *cmd_line) {
 	return 0;
 }
 
-/* wait - 자식 프로세스 pid를 기다렸다가 자식의 종료 상태를 검색합니다. 
- * pid가 아직 살아있다면 종료될 때까지 기다립니다. 
- * 그런 다음 pid가 종료하기 위해 전달한 상태를 반환합니다. 
- * pid가 exit()를 호출하지 않았지만 커널에 의해 종료된 경우(예: 예외로 인해 종료된 경우) wait(pid)는 -1을 반환해야 합니다. 
- * 부모 프로세스가 wait를 호출할 때 이미 종료된 자식 프로세스를 기다리는 것은 완전히 합법적이지만, 
- * 커널은 여전히 부모가 자식의 종료 상태를 검색하거나 자식이 커널에 의해 종료되었음을 알 수 있도록 허용해야 합니다.
+/* wait - 자식 프로세스 pid를 기다렸다가 자식의 종료 상태를 확인한다. 
+ * 해당 자식 프로세스가 아직 실행 중이면 종료될 때까지 기다린다.
+ * 그리고 자식 프로세스가 종료되면, 종료 시에 전달된 상태를 반환한다. 
+ * 자식 프로세스가 exit()를 호출하지 않았지만 커널에 의해 종료된 경우(예: 예외로 인해 종료된 경우) -1을 반환해야 합니다. 
+ * 부모 프로세스가 이미 종료된 자식 프로세스를 기다리는 것은 가능하지만, 
+ * 커널은 여전히 부모가 자식의 종료 상태를 확인하거나 자식이 커널에 의해 종료되었음을 알 수 있도록 해야 한다.
  * 
- * wait는 다음 조건 중 하나라도 참이면 실패하고 즉시 -1을 반환해야 합니다:
- * 1. 호출 프로세스가 포크에 대한 성공적인 호출에서 반환 값으로 pid를 받은 경우에만 pid는 호출 프로세스의 직접 자식을 참조하지 않습니다. 
- * 	  자식은 상속되지 않습니다. A가 자식 B를 생성하고 B가 자식 프로세스 C를 생성하는 경우, B가 죽었더라도 A는 C를 기다릴 수 없습니다. 
- * 	  프로세스 A의 wait(C) 호출은 실패해야 합니다. 
- * 	  마찬가지로 고아 프로세스는 부모 프로세스가 먼저 종료되면 새 부모에게 할당되지 않습니다.
- * 2. 기다림을 호출하는 프로세스가 이미 pid에서 기다림을 호출했습니다. 
- * 	  즉, 프로세스는 최대 한 번만 특정 자식을 기다릴 수 있습니다.
+ * wait은 아래의 경우 중 하나라도 해당된다면 즉시 -1을 반환해야 한다.
+ * 1. pid가 호출 프로세스의 직접적인 자식이 아닐 때.
+ * 	  호출 프로세스가 성공적인 fork 호출으로 반환 값 pid를 받았다면, 해당 pid가 호출 프로세스의 직접적인 자식이다.
+ * 	  자식은 상속되지 않는다. A가 자식 프로세스 B를 생성하고 B가 자식 프로세스 C를 생성하는 경우, B가 죽었더라도 A는 C를 기다릴 수 없다.
+ * 	  프로세스 A의 wait(C) 호출은 실패해야 한다. 마찬가지로 고아 프로세스는 부모 프로세스가 먼저 종료되면 새 부모에게 할당되지 않는다.
+ * 
+ * 2. wait 호출하는 프로세스가 이미 pid에서 wait을 호출했을 때. 
+ * 	  즉, 프로세스는 최대 한 번만 특정 자식을 기다릴 수 있다.
  */
 int wait(pid_t pid) {
-	process_wait(pid);
+	return process_wait(pid);
 }
 
 /* create - 처음에 initial_size 바이트 크기의 파일이라는 새 파일을 만듭니다. 
