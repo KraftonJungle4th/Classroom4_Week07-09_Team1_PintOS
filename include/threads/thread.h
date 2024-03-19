@@ -131,7 +131,7 @@ struct thread {
 	struct list child_list; // child list
 	struct list_elem child_elem; // child list element
 	struct intr_frame *parent_if; // parent intr_frame
-	struct semaphore fork_sema; // fork semaphore
+	struct semaphore load_sema; // load semaphore
 	struct semaphore wait_sema; // wait semaphore
 	struct semaphore exit_sema;
 };
