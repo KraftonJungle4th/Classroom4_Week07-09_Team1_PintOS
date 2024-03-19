@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "include/threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -125,10 +126,14 @@ struct thread {
 	unsigned magic;                     /* Detects stack overflow. */
 
 	/* Project 2 */
-	struct file **fdt; // file descriptor table
 	int exit_status;
-	struct list_elem p_elem; // process list element
+	struct file **fdt; // file descriptor table
+	struct list child_list; // child list
+	struct list_elem child_elem; // child list element
 	struct intr_frame *parent_if; // parent intr_frame
+	struct semaphore fork_sema; // fork semaphore
+	struct semaphore wait_sema; // wait semaphore
+	struct semaphore exit_sema;
 };
 
 /* If false (default), use round-robin scheduler.

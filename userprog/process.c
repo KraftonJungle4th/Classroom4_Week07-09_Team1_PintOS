@@ -28,16 +28,11 @@ static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
 static void __do_fork (void *);
 void set_userstack(char **argv, int argc, struct intr_frame *if_);
-
-/* initd와 fork를 통해 생성되는 모든 프로세스들
- */
-static struct list processes;
+struct thread *get_child_process(tid_t pid);
 
 /* General process initializer for initd and other process. */
 static void process_init (void) {
 	struct thread *current = thread_current ();
-	list_init(&processes);
-	list_push_back(&processes, &current->p_elem);
 }
 
 /* process_create_initd - FILE_NAME에서 로드된 "initd"라는 첫 번째 userland 프로그램을 시작한다.
@@ -61,7 +56,6 @@ tid_t process_create_initd (const char *file_name) {
 	/* Project 2: COmmand Line Parsing */
 	char *save_ptr;
 	strtok_r(file_name, " ",  &save_ptr);
-
 	/* Create a new thread to execute FILE_NAME. */
 	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
 	if (tid == TID_ERROR)
@@ -78,7 +72,6 @@ static void initd (void *f_name) {
 #endif
 
 	process_init ();
-
 	if (process_exec (f_name) < 0)
 		PANIC("Fail to launch initd\n");
 	NOT_REACHED ();
@@ -88,10 +81,18 @@ static void initd (void *f_name) {
 /* process_fork - 현재 프로세스를 'name'으로 복제한다.
  * 새 프로세스의 tid를 반환하거나 스레드를 생성할 수 없는 경우 TID_ERROR를 반환한다.
  */
-tid_t process_fork (const char *name, struct intr_frame *if_ UNUSED) {
-	// 현재 스레드를 새 스레드로 복제
-	tid_t tid = thread_create (name, PRI_DEFAULT, __do_fork, thread_current());
+tid_t process_fork (const char *name, struct intr_frame *if_) {
+	// 현재 스레드의 실행 컨텍스트를 복사
+	struct thread *cur = thread_current();
+	memcpy(&cur->parent_if, if_, sizeof(struct intr_frame));
 
+	// 현재 스레드를 새 스레드로 복제
+	tid_t tid = thread_create (name, PRI_DEFAULT, __do_fork, cur);
+
+	struct thread *child = get_child_process(tid);
+	list_push_back(&cur->child_list, &child->child_elem);
+
+	sema_down(&child->fork_sema);
 	return tid;
 }
 
@@ -181,18 +182,23 @@ __do_fork (void *aux) {
 	 * 부모는 fork()에서 반환되지 않아야 한다.
 	 */
 	int idx = 2;
+	current->fdt[0] = parent->fdt[0];
+	current->fdt[1] = parent->fdt[1];
 	while (parent->fdt[idx] != NULL && idx < FDT_SIZE) {
 		current->fdt[idx] = file_duplicate(parent->fdt[idx]);
 		idx++;
 	}
-
+	if_.R.rax = 0;
+	sema_up(&current->fork_sema);
 	process_init ();
 
 	/* Finally, switch to the newly created process. */
 	if (succ)
 		do_iret (&if_);
 error:
-	thread_exit ();
+	sema_up(&current->fork_sema);
+	// thread_exit ();
+	exit(TID_ERROR);
 }
 
 /* process_exec - 현재 실행 컨텍스트를 f_name으로 전환한다.
@@ -235,6 +241,8 @@ int process_exec (void *f_name) {
 		return -1;
 
 	/* 전환된 사용자 프로세스를 시작한다. */
+	sema_up(&thread_current()->fork_sema);
+	printf("sema_up1\n");
 	do_iret (&_if);
 	NOT_REACHED ();
 }
@@ -246,33 +254,46 @@ int process_exec (void *f_name) {
  * tid가 유효하지 않거나 호출 프로세스의 자식이 아닌 경우,
  * 또는 지정된 tid에 대해 process_wait()가 이미 성공적으로 호출된 경우
  * 즉시 -1을 반환하고 기다리지 않는다.
- *
- * 이 기능은 문제 2-2에서 구현될 예정이다.
- * 지금은 아무것도 하지 않는다.
  */
 int process_wait (tid_t child_tid) {
 	/* 프로세스_대기(initd)를 실행하면 핀토가 종료되므로,
 	프로세스_대기를 구현하기 전에
 	여기에 무한 루프를 추가하는 것이 좋습니다. */
-	// sema down, up 사용
+	struct thread *child = get_child_process(child_tid);
+	if (child == NULL)
+		return -1;
+
+	sema_down(&child->wait_sema);
+	list_remove(&child->child_elem);
+	sema_up(&child->exit_sema);
+
 	for (unsigned long long i = 0; i <= 15000000000; i++){
 		continue;
 	}
-	return -1;
+
+	if (child->exit_status != 0) {
+		return -1;
+	}
+	else {
+		return child->exit_status;
+	}
 }
 
 /* process_exit - 현재 프로세스를 종료한다.
  * 이 함수는 thread_exit()에 의해 호출된다.
  */
-void
-process_exit (void) {
-	struct thread *curr = thread_current ();
+void process_exit (void) {
+	struct thread *t = thread_current();
+	printf("%s: exit(%d)\n", t->name, t->exit_status);
+
 	/* TODO: Your code goes here.
 	 * 프로세스 종료 메시지를 구현한다. (project2/process_termination.html 참조)
 	 * 여기서 프로세스 자원 정리를 구현하는 것을 권장한다.
 	 */
 
 	process_cleanup ();
+	sema_up(&t->wait_sema);
+	sema_down(&t->exit_sema);
 }
 
 /* Free the current process's resources. */
@@ -390,7 +411,9 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 	process_activate (thread_current ());
 
 	/* Open executable file. */
+	printf("filesys_open start\n");
 	file = filesys_open (file_name);
+	printf("filesys_open end\n");
 	if (file == NULL) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
@@ -725,4 +748,17 @@ void set_userstack(char **argv, int argc, struct intr_frame *if_) {
 	// 6. 가짜 반환 주소를 넣는다.
 	if_->rsp -= 8;
 	memset(if_->rsp, 0, sizeof(void *));
+}
+
+struct thread *get_child_process(tid_t pid) {
+	struct thread *t = thread_current();
+	struct list_elem *e;
+
+	for (e = list_begin(&t->child_list); e != list_end(&t->child_list); e = list_next(e)) {
+		struct thread *child = list_entry(e, struct thread, child_elem);
+		if (pid == child->tid) {
+			return child;
+		}
+	}
+	return NULL;
 }
