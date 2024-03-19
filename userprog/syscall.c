@@ -137,17 +137,10 @@ void halt(void) {
  * 일반적으로 0 상태는 성공을 나타내고 0이 아닌 값은 오류를 나타냅니다.
  */
 void exit(int status) {
-	/* Project 2: Process Termination Message */
 	struct thread *t = thread_current();
 	t->exit_status = status;
-
-	/* 프로세스가 종료되는 경우 모든 파일을 암시적으로 닫는다.*/
-	int fd = 2;
-	// while (t->fdt[fd] != NULL) {
-	// 	printf("close fd: %d\n", fd);
-	// 	close(fd);
-	// 	fd++;
-	// }
+	/* Project 2: Process Termination Message */
+	printf("%s: exit(%d)\n", t->name, t->exit_status);
 	thread_exit();
 }
 

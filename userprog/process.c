@@ -29,10 +29,10 @@ static void initd (void *f_name);
 static void __do_fork (void *);
 void set_userstack(char **argv, int argc, struct intr_frame *if_);
 struct thread *get_child_process(tid_t pid);
+static struct thread *main_thread; // tid 1 thread
 
 /* General process initializer for initd and other process. */
 static void process_init (void) {
-	struct thread *current = thread_current ();
 }
 
 /* process_create_initd - FILE_NAME에서 로드된 "initd"라는 첫 번째 userland 프로그램을 시작한다.
@@ -45,6 +45,7 @@ static void process_init (void) {
 tid_t process_create_initd (const char *file_name) {
 	char *fn_copy;
 	tid_t tid;
+	main_thread = thread_current();
 
 	/* Make a copy of FILE_NAME.
 	 * Otherwise there's a race between the caller and load(). */
@@ -58,6 +59,7 @@ tid_t process_create_initd (const char *file_name) {
 	strtok_r(file_name, " ",  &save_ptr);
 	/* Create a new thread to execute FILE_NAME. */
 	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
+	sema_down(&main_thread->load_sema);
 	if (tid == TID_ERROR)
 		palloc_free_page (fn_copy);
 	return tid;
@@ -66,13 +68,14 @@ tid_t process_create_initd (const char *file_name) {
 /* initd - 첫 번째 사용자 프로세스를 시작하는 스레드 함수
  * 이 다음 프로세스부터는 fork()를 사용하여 생성한다.
  */
-static void initd (void *f_name) {
+static void initd(void *f_name) {
 #ifdef VM
 	supplemental_page_table_init (&thread_current ()->spt);
 #endif
 
-	process_init ();
-	if (process_exec (f_name) < 0)
+	process_init();
+	
+	if (process_exec(f_name) < 0)
 		PANIC("Fail to launch initd\n");
 	NOT_REACHED ();
 }
@@ -92,7 +95,7 @@ tid_t process_fork (const char *name, struct intr_frame *if_) {
 	struct thread *child = get_child_process(tid);
 	list_push_back(&cur->child_list, &child->child_elem);
 
-	sema_down(&child->fork_sema);
+	sema_down(&child->load_sema);
 	return tid;
 }
 
@@ -189,14 +192,14 @@ __do_fork (void *aux) {
 		idx++;
 	}
 	if_.R.rax = 0;
-	sema_up(&current->fork_sema);
-	process_init ();
+	sema_up(&current->load_sema);
+	process_init();
 
 	/* Finally, switch to the newly created process. */
 	if (succ)
 		do_iret (&if_);
 error:
-	sema_up(&current->fork_sema);
+	sema_up(&current->load_sema);
 	// thread_exit ();
 	exit(TID_ERROR);
 }
@@ -240,9 +243,9 @@ int process_exec (void *f_name) {
 	if (!success)
 		return -1;
 
+	list_push_back(&main_thread->child_list, &thread_current()->child_elem);
+	sema_up(&main_thread->load_sema);
 	/* 전환된 사용자 프로세스를 시작한다. */
-	sema_up(&thread_current()->fork_sema);
-	printf("sema_up1\n");
 	do_iret (&_if);
 	NOT_REACHED ();
 }
@@ -260,16 +263,12 @@ int process_wait (tid_t child_tid) {
 	프로세스_대기를 구현하기 전에
 	여기에 무한 루프를 추가하는 것이 좋습니다. */
 	struct thread *child = get_child_process(child_tid);
-	if (child == NULL)
+	if (child == NULL) {
 		return -1;
-
+	}
 	sema_down(&child->wait_sema);
 	list_remove(&child->child_elem);
-	sema_up(&child->exit_sema);
-
-	for (unsigned long long i = 0; i <= 15000000000; i++){
-		continue;
-	}
+	// sema_up(&child->exit_sema);
 
 	if (child->exit_status != 0) {
 		return -1;
@@ -284,16 +283,22 @@ int process_wait (tid_t child_tid) {
  */
 void process_exit (void) {
 	struct thread *t = thread_current();
-	printf("%s: exit(%d)\n", t->name, t->exit_status);
 
 	/* TODO: Your code goes here.
-	 * 프로세스 종료 메시지를 구현한다. (project2/process_termination.html 참조)
 	 * 여기서 프로세스 자원 정리를 구현하는 것을 권장한다.
 	 */
 
+	/* 프로세스가 종료되는 경우 모든 파일을 암시적으로 닫는다.*/
+	int fd = 2;
+	// while (t->fdt[fd] != NULL) {
+	// 	printf("close fd: %d\n", fd);
+	// 	close(fd);
+	// 	fd++;
+	// }
+
 	process_cleanup ();
 	sema_up(&t->wait_sema);
-	sema_down(&t->exit_sema);
+	// sema_down(&t->exit_sema);
 }
 
 /* Free the current process's resources. */
@@ -411,9 +416,7 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 	process_activate (thread_current ());
 
 	/* Open executable file. */
-	printf("filesys_open start\n");
 	file = filesys_open (file_name);
-	printf("filesys_open end\n");
 	if (file == NULL) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
