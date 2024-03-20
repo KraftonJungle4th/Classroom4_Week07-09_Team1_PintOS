@@ -133,7 +133,6 @@ struct thread {
 	struct intr_frame parent_if; // parent intr_frame
 	struct semaphore load_sema; // load semaphore
 	struct semaphore wait_sema; // wait semaphore
-	struct semaphore exit_sema;
 };
 
 /* If false (default), use round-robin scheduler.

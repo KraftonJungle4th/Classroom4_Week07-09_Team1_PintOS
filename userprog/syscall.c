@@ -157,9 +157,7 @@ void exit(int status) {
  * 전달된 pte_for_each_func의 누락된 부분을 채워야 한다. (가상 주소 참조)
  */
 pid_t fork(const char *thread_name) {
-	pid_t forked_process_pid = process_fork(thread_name, frame);
-
-	return forked_process_pid;
+	return process_fork(thread_name, frame);
 }
 
 /* exec - 주어진 인수를 전달하여 현재 프로세스를 cmd_line에 지정된 이름의 실행 파일로 변경합니다. 
@@ -169,8 +167,8 @@ pid_t fork(const char *thread_name) {
  * 실행 호출이 진행되는 동안 파일 설명자는 열린 상태로 유지된다는 점에 유의하세요.
  */
 int exec(const char *cmd_line) {
-	printf("exec called ok\n");
-	return 0;
+	printf(" # exec : %s\n", cmd_line);
+	return process_exec(cmd_line); 
 }
 
 /* wait - 자식 프로세스 pid를 기다렸다가 자식의 종료 상태를 확인한다. 
@@ -268,8 +266,14 @@ int read(int fd, void *buffer, unsigned size) {
 	if (_file == NULL) {
 		return -1;
 	}
+	int byte = 0;
+	char *_buffer;
 	if (fd == STDIN_FILENO) {
-		uint8_t key = input_getc();
+		_buffer = buffer;
+		while (byte < size) {
+			_buffer[byte++] = input_getc();
+		}
+		return byte;
 	}
 
 	return file_read(_file, buffer, size);
