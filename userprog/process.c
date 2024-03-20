@@ -7,6 +7,7 @@
 #include <string.h>
 #include "userprog/gdt.h"
 #include "userprog/tss.h"
+#include "userprog/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -235,6 +236,8 @@ int process_exec (void *f_name) {
 
 	/* 그리고 바이너리를 불러온다. */
 	success = load(file_name, &_if);
+	if (!success)
+		return -1;
 
 	/* Project 2: Argument Passing*/
 	set_userstack(argv, argc, &_if);
@@ -276,18 +279,11 @@ int process_wait (tid_t child_tid) {
 void process_exit (void) {
 	struct thread *t = thread_current();
 
-	/* TODO: Your code goes here.
-	 * 여기서 프로세스 자원 정리를 구현하는 것을 권장한다.
-	 * 프로세스가 종료되는 경우 모든 파일을 암시적으로 닫는다.
-	 */
-
-	// int fd = 2;
-	// while (fd < FDT_SIZE) {
-	// 	if (t->fdt[fd] != NULL)
-	// 		close(fd);
-	// 	fd++;
-	// }fo
-
+	// for (int i = 0; i < FDT_SIZE; i++) {
+	// 	close(i);
+	// }
+	// palloc_free_multiple(t->fdt, FDT_SIZE);
+	file_close(t->self_file);
 	process_cleanup ();
 	sema_up(&t->wait_sema);
 }
@@ -410,7 +406,7 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 	file = filesys_open (file_name);
 	if (file == NULL) {
 		printf ("load: %s: open failed\n", file_name);
-		goto done;
+		return false;
 	}
 
 	/* Read and verify executable header. */
@@ -478,6 +474,8 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 		}
 	}
 
+	t->self_file = file;
+	file_deny_write(file);
 	/* Set up stack. */
 	if (!setup_stack (if_))
 		goto done;
@@ -492,7 +490,6 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 
 done:
 	/* We arrive here whether the load is successful or not. */
-	file_close (file);
 	return success;
 }
 
