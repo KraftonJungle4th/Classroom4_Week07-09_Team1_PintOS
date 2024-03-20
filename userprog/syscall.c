@@ -181,6 +181,9 @@ int exec(const char *cmd_line) {
 	if (process_exec(cpname) == -1){
 		exit(-1);
 	}
+
+	NOT_REACHED();
+	return -1;
 }
 
 /* wait - 자식 프로세스 pid를 기다렸다가 자식의 종료 상태를 확인한다. 
@@ -316,23 +319,23 @@ int write(int fd, const void *buffer, unsigned size) {
 	}	
 }
 
-/* seek - 열린 파일 fd에서 읽거나 쓸 다음 바이트를 파일 시작부터 바이트 단위로 표시되는 위치로 변경합니다(따라서 위치가 0이면 파일의 시작입니다). 
- * 파일의 현재 끝을 지나서 찾는 것은 오류가 아닙니다. 
+/* seek - 열린 파일 fd에서 읽거나 쓸 다음 바이트를 파일 시작부터 바이트 단위로 표시되는 위치로 변경한다.
+ * (따라서 위치가 0이면 파일의 시작입니다). 파일의 현재 끝을 지나서 찾는 것은 오류가 아니다.
  * 나중에 읽으면 파일 끝을 나타내는 0바이트를 얻습니다. 
  * 나중에 쓰기는 파일을 확장하여 기록되지 않은 간격을 0으로 채웁니다. 
  * (단, 핀토스에서는 프로젝트 4가 완료될 때까지 파일 길이가 고정되어 있으므로 파일 끝을 지나서 쓰면 오류가 반환됩니다.) 
  * 이러한 의미는 파일 시스템에서 구현되며 시스템 호출 구현에 특별한 노력이 필요하지 않습니다.
  */
 void seek(int fd, unsigned position) {
-	printf("seek called ok\n");
-	file_seek(fd, position);
+	struct file *_file = get_file_from_fd(fd);
+	file_seek(_file, position);
 }
 
 /* tell - 열린 파일 fd에서 읽거나 쓸 다음 바이트의 위치를 파일 시작 부분부터 바이트 단위로 반환합니다.
  */
 unsigned tell(int fd) {
-	printf("tell called ok\n");
-	return file_tell(fd);
+	struct file *_file = get_file_from_fd(fd);
+	return file_tell(_file);
 }
 
 /* close - fd를 닫는다.
