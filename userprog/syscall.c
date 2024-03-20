@@ -170,8 +170,8 @@ pid_t fork(const char *thread_name) {
  * 실행 호출이 진행되는 동안 파일 설명자는 열린 상태로 유지된다는 점에 유의하세요.
  */
 int exec(const char *cmd_line) {
-	int n = strlen(cmd_line);
 	check_address(cmd_line);
+	int n = strlen(cmd_line);
 	char *cpname = palloc_get_page(0);
 	if (cpname == NULL) {
 		exit(-1);
@@ -324,15 +324,15 @@ int write(int fd, const void *buffer, unsigned size) {
  * 이러한 의미는 파일 시스템에서 구현되며 시스템 호출 구현에 특별한 노력이 필요하지 않습니다.
  */
 void seek(int fd, unsigned position) {
-	printf("seek called ok\n");
-	file_seek(fd, position);
+	struct file *_file = get_file_from_fd(fd);
+	file_seek(_file, position);
 }
 
 /* tell - 열린 파일 fd에서 읽거나 쓸 다음 바이트의 위치를 파일 시작 부분부터 바이트 단위로 반환합니다.
  */
 unsigned tell(int fd) {
-	printf("tell called ok\n");
-	return file_tell(fd);
+	struct file *_file = get_file_from_fd(fd);
+	return file_tell(_file);
 }
 
 /* close - fd를 닫는다.
@@ -390,23 +390,21 @@ int add_file_to_fdt(struct file *file) {
  */
 void remove_file_from_fdt(int fd) {
 	struct thread *t = thread_current();
-	t->fdt[fd] = NULL;
-}
+	struct file **_fdt = t->fdt;
+	if (fd < 2 || fd >= FDT_SIZE || t->fdt[fd] == NULL) {
+        return; // 유효하지 않은 파일 디스크립터이거나 이미 닫혀있는 경우
+    }
 
+	_fdt[fd] = NULL;
+}
 
 /* get_file_from_fd - fd에 해당하는 file을 반환한다.
  */
 struct file *get_file_from_fd(int fd) {
-	if (fd < 2 || fd >= FDT_SIZE) 
-		return NULL;
 	struct thread *t = thread_current();
-	struct file *_file = t->fdt[fd];
-	if (_file == NULL) 
-	{
+	struct file **_fdt = t->fdt;
+	if (fd < 2 || fd >= FDT_SIZE || _fdt[fd] == NULL) 
 		return NULL;
-	}
 	else
-	{
-		return _file;
-	}
+		return _fdt[fd];
 }

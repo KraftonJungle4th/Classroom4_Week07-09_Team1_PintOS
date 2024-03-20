@@ -235,6 +235,8 @@ int process_exec (void *f_name) {
 
 	/* 그리고 바이너리를 불러온다. */
 	success = load(file_name, &_if);
+	if (!success)
+		return -1;
 
 	/* Project 2: Argument Passing*/
 	set_userstack(argv, argc, &_if);
@@ -287,7 +289,8 @@ void process_exit (void) {
 	// 		close(fd);
 	// 	fd++;
 	// }fo
-
+	// 스레드의 파일 닫기
+	file_close(t->self_file);
 	process_cleanup ();
 	sema_up(&t->wait_sema);
 }
@@ -410,7 +413,7 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 	file = filesys_open (file_name);
 	if (file == NULL) {
 		printf ("load: %s: open failed\n", file_name);
-		goto done;
+		return false;
 	}
 
 	/* Read and verify executable header. */
@@ -479,6 +482,8 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 	}
 
 	/* Set up stack. */
+	t->self_file = file;
+	file_deny_write(file);
 	if (!setup_stack (if_))
 		goto done;
 
@@ -492,7 +497,7 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 
 done:
 	/* We arrive here whether the load is successful or not. */
-	file_close (file);
+	//file_close (file);
 	return success;
 }
 
