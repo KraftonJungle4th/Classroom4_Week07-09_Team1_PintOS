@@ -240,6 +240,7 @@ tid_t thread_create(const char *name, int priority, thread_func *function, void 
 	t->fdt[0] = 1;
 	t->fdt[1] = 2;
 
+	list_push_back(&thread_current()->child_list, &t->child_elem);
 	/* Add to run queue. */
 	thread_unblock(t);
 
