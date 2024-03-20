@@ -11,8 +11,11 @@
 #include "filesys/filesys.h"
 #include "userprog/process.h"
 #include "include/lib/stdio.h"
+#include "include/lib/string.h"
 #include "include/lib/user/syscall.h"
 #include "devices/input.h"
+#include "include/threads/palloc.h"
+
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -167,8 +170,17 @@ pid_t fork(const char *thread_name) {
  * 실행 호출이 진행되는 동안 파일 설명자는 열린 상태로 유지된다는 점에 유의하세요.
  */
 int exec(const char *cmd_line) {
-	printf(" # exec : %s\n", cmd_line);
-	return process_exec(cmd_line); 
+	int n = strlen(cmd_line);
+	check_address(cmd_line);
+	char *cpname = palloc_get_page(0);
+	if (cpname == NULL) {
+		exit(-1);
+	}
+	strlcpy(cpname, cmd_line, PGSIZE);
+
+	if (process_exec(cpname) == -1){
+		exit(-1);
+	}
 }
 
 /* wait - 자식 프로세스 pid를 기다렸다가 자식의 종료 상태를 확인한다. 
