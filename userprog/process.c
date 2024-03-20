@@ -84,16 +84,19 @@ static void initd(void *f_name) {
 /* process_fork - 현재 프로세스를 'name'으로 복제한다.
  * 새 프로세스의 tid를 반환하거나 스레드를 생성할 수 없는 경우 TID_ERROR를 반환한다.
  */
-tid_t process_fork (const char *name, struct intr_frame *if_) {
+tid_t process_fork(const char *name, struct intr_frame *if_) {
 	// 현재 스레드의 실행 컨텍스트를 복사
 	struct thread *cur = thread_current();
 	memcpy(&cur->parent_if, if_, sizeof(struct intr_frame));
 
 	// 현재 스레드를 새 스레드로 복제
-	tid_t tid = thread_create (name, PRI_DEFAULT, __do_fork, cur);
+	tid_t tid = thread_create(name, PRI_DEFAULT, __do_fork, cur);
+	if (tid == TID_ERROR)
+		return TID_ERROR;
 
 	struct thread *child = get_child_process(tid);
-	list_push_back(&cur->child_list, &child->child_elem);
+	if (child == NULL)
+		return TID_ERROR;
 
 	sema_down(&child->load_sema);
 	return tid;
@@ -112,9 +115,8 @@ static bool duplicate_pte (uint64_t *pte, void *va, void *aux) {
 
 	/* 1. TODO: If the parent_page is kernel page, then return immediately. */
 	/* 부모 페이지가 커널 페이지인 경우 즉시 반환합니다. */
-	if (is_kernel_vaddr (va)){
-		return false;
-	}
+	if (is_kernel_vaddr (va))
+		return true;
 
 	/* 2. Resolve VA from the parent's page map level 4. */
 	/* 부모의 페이지 맵 레벨 4에서 VA를 해결합니다.*/
@@ -175,8 +177,9 @@ __do_fork (void *aux) {
 	if (!supplemental_page_table_copy (&current->spt, &parent->spt))
 		goto error;
 #else
-	if (!pml4_for_each (parent->pml4, duplicate_pte, parent))
+	if (!pml4_for_each (parent->pml4, duplicate_pte, parent)) {
 		goto error;
+	}
 #endif
 
 	/* TODO: Your code goes here.
@@ -187,14 +190,15 @@ __do_fork (void *aux) {
 	int idx = 2;
 	current->fdt[0] = parent->fdt[0];
 	current->fdt[1] = parent->fdt[1];
-	while (parent->fdt[idx] != NULL && idx < FDT_SIZE) {
-		current->fdt[idx] = file_duplicate(parent->fdt[idx]);
+	while (idx < FDT_SIZE) {
+		if (parent->fdt[idx] != NULL) {
+			current->fdt[idx] = file_duplicate(parent->fdt[idx]);
+		}
 		idx++;
 	}
-	if_.R.rax = 0;
+	if_.R.rax = 0; // 자식 프로세스의 반환 값은 0
 	sema_up(&current->load_sema);
 	process_init();
-
 	/* Finally, switch to the newly created process. */
 	if (succ)
 		do_iret (&if_);
@@ -242,8 +246,6 @@ int process_exec (void *f_name) {
 	palloc_free_page (file_name);
 	if (!success)
 		return -1;
-
-	list_push_back(&main_thread->child_list, &thread_current()->child_elem);
 	sema_up(&main_thread->load_sema);
 	/* 전환된 사용자 프로세스를 시작한다. */
 	do_iret (&_if);
@@ -259,23 +261,13 @@ int process_exec (void *f_name) {
  * 즉시 -1을 반환하고 기다리지 않는다.
  */
 int process_wait (tid_t child_tid) {
-	/* 프로세스_대기(initd)를 실행하면 핀토가 종료되므로,
-	프로세스_대기를 구현하기 전에
-	여기에 무한 루프를 추가하는 것이 좋습니다. */
+	struct thread *cur = thread_current();
 	struct thread *child = get_child_process(child_tid);
-	if (child == NULL) {
+	if (child == NULL)
 		return -1;
-	}
 	sema_down(&child->wait_sema);
 	list_remove(&child->child_elem);
-	// sema_up(&child->exit_sema);
-
-	if (child->exit_status != 0) {
-		return -1;
-	}
-	else {
-		return child->exit_status;
-	}
+	return child->exit_status;
 }
 
 /* process_exit - 현재 프로세스를 종료한다.
@@ -286,19 +278,18 @@ void process_exit (void) {
 
 	/* TODO: Your code goes here.
 	 * 여기서 프로세스 자원 정리를 구현하는 것을 권장한다.
+	 * 프로세스가 종료되는 경우 모든 파일을 암시적으로 닫는다.
 	 */
 
-	/* 프로세스가 종료되는 경우 모든 파일을 암시적으로 닫는다.*/
-	int fd = 2;
-	// while (t->fdt[fd] != NULL) {
-	// 	printf("close fd: %d\n", fd);
-	// 	close(fd);
+	// int fd = 2;
+	// while (fd < FDT_SIZE) {
+	// 	if (t->fdt[fd] != NULL)
+	// 		close(fd);
 	// 	fd++;
-	// }
+	// }fo
 
 	process_cleanup ();
 	sema_up(&t->wait_sema);
-	// sema_down(&t->exit_sema);
 }
 
 /* Free the current process's resources. */
@@ -764,4 +755,28 @@ struct thread *get_child_process(tid_t pid) {
 		}
 	}
 	return NULL;
+}
+
+void print_intr_frame(struct intr_frame *f) {
+	printf("R15: %lld /", f->R.r15);
+	printf("R14: %lld /", f->R.r14);
+	printf("R13: %lld /", f->R.r13);
+	printf("R12: %lld /", f->R.r12);
+	printf("R11: %lld /", f->R.r11);
+	printf("R10: %lld /", f->R.r10);
+	printf("R9: %lld /", f->R.r9);
+	printf("R8: %lld /", f->R.r8);
+	printf("RDI: %lld /", f->R.rdi);
+	printf("RSI: %lld /", f->R.rsi);
+	printf("RBP: %lld /", f->R.rbp);
+	printf("RBX: %lld /", f->R.rbx);
+	printf("RDX: %lld /", f->R.rdx);
+	printf("RCX: %lld /", f->R.rcx);
+	printf("RAX: %lld /", f->R.rax);
+	printf("RIP: %lld /", f->rip);
+	printf("CS: %lld /", f->cs);
+	printf("EFLAGS: %lld /", f->eflags);
+	printf("RSP: %lld /", f->rsp);
+	printf("SS: %lld /", f->ss);
+	printf("\n\n");
 }
