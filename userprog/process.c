@@ -291,6 +291,9 @@ void process_exit (void) {
 	// }fo
 	// 스레드의 파일 닫기
 	file_close(t->self_file);
+	for (int i = 0; i < FDT_SIZE; i++) {
+    	t->fdt[i] = NULL;
+	}
 	process_cleanup ();
 	sema_up(&t->wait_sema);
 }

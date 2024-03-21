@@ -390,12 +390,14 @@ int add_file_to_fdt(struct file *file) {
  */
 void remove_file_from_fdt(int fd) {
 	struct thread *t = thread_current();
-	struct file **_fdt = t->fdt;
+	//struct file **_fdt = t->fdt;
 	if (fd < 2 || fd >= FDT_SIZE || t->fdt[fd] == NULL) {
         return; // 유효하지 않은 파일 디스크립터이거나 이미 닫혀있는 경우
     }
-
-	_fdt[fd] = NULL;
+	for (int i = 0; i < FDT_SIZE; i++) {
+    	t->fdt[i] = NULL;
+	}
+	//_fdt[fd] = NULL;
 }
 
 /* get_file_from_fd - fd에 해당하는 file을 반환한다.

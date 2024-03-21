@@ -242,6 +242,14 @@ tid_t thread_create(const char *name, int priority, thread_func *function, void 
 		palloc_free_page(t);
 		return TID_ERROR;
 	}
+	// fdt 배열을 동적으로 할당
+	//struct file** fdt = (struct file**)malloc(FDT_SIZE * sizeof(struct file*));
+
+	// fdt 배열의 모든 요소를 NULL로 초기화
+	for (int i = 0; i < FDT_SIZE; i++) {
+    	t->fdt[i] = NULL;
+	}
+
 	t->fdt[0] = 1;
 	t->fdt[1] = 2;
 	// 현재 스레드의 자식으로 추가
