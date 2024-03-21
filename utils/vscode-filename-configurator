@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+# 파일 생성 후 반드시 `chmod +x vscode-filename-configurator`` 명령어로 실행 권한 부여 할 것
+import sys
+import json
+import os
+
+def is_executable_file(file_path):
+    return os.access(file_path, os.X_OK)
+
+def is_readable_file(file_path):
+    return os.access(file_path, os.R_OK)
+
+def is_not_executable_file(file_path):
+    return os.access(file_path, os.R_OK) and not os.access(file_path, os.X_OK)
+
+def find_files(root_path, file_func):
+    files = []
+
+    for foldername, subfolders, filenames in os.walk(root_path):
+        for filename in filenames:
+            file_path = os.path.join(foldername, filename)
+
+            if file_func(file_path):
+                relative_path = os.path.relpath(file_path, root_path)
+                files.append(relative_path)
+
+    return files
+
+def print_usage():
+    print(f"Usage: {sys.argv[0]} <file_type> <project> <path> <arg_name>")
+    print("  file_type: exec, all, notexec")
+    print("  project: threads, userprog, vm, filesys")
+    print("  path: path to the project")
+    print("  arg_name: input name in tasks file")
+    sys.exit(-1)
+
+# Command line arguments
+if len(sys.argv) != 5:
+    print_usage()
+
+file_type = sys.argv[1]
+project = sys.argv[2]
+path = sys.argv[3]
+arg_name = sys.argv[4]
+build_path = os.path.join(path, project, 'build')
+
+file_func = is_readable_file
+if file_type == "exec":
+    file_func = is_executable_file
+elif file_type == "notexec":
+    file_func = is_not_executable_file
+elif file_type == "all":
+    file_func = is_readable_file
+else:
+    print_usage()
+    
+if os.path.exists(build_path):
+    file_list = find_files(build_path, file_func)
+else:
+    print(f"Error: Build path not found: {build_path}")
+    sys.exit(-1)
+
+file_list = [item for item in file_list if '.' not in item]
+
+if not file_list:
+    print("Error: No files found")
+    sys.exit(-1)
+
+config_path = os.path.join(path, '.vscode/tasks.json')
+
+with open(config_path, 'r') as config_file:
+    config = json.load(config_file)
+
+success = False
+for inputs in config["inputs"]:
+    if inputs["id"] == arg_name:
+        inputs["options"] = file_list
+        success = True
+        break
+
+if success:
+    with open(config_path, 'w') as config_file:
+        json.dump(config, config_file, indent=4)
+    sys.exit(0)
+
+print("Error: Argument not found in tasks file")
+sys.exit(-1)
