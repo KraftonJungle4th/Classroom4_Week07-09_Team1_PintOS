@@ -269,6 +269,7 @@ int process_wait (tid_t child_tid) {
 		return -1;
 	sema_down(&child->wait_sema);
 	list_remove(&child->child_elem);
+	sema_up(&child->exit_sema);
 	return child->exit_status;
 }
 
@@ -296,6 +297,7 @@ void process_exit (void) {
 	}
 	process_cleanup ();
 	sema_up(&t->wait_sema);
+	sema_down(&t->exit_sema);
 }
 
 /* Free the current process's resources. */

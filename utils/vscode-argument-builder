@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+# WARN: it does not support filesys debugging.
+# 파일 생성 후 반드시 `chmod +x vscode-argument-builder` 명령어로 실행 권한 부여 할 것
+import sys
+import json
+import os
+import re
+from collections import defaultdict
+
+def find_file(directory, filename):
+    file_list = []
+
+    for root, dirs, files in os.walk(directory):
+        for file in files:
+            if file == filename:
+                file_list.append(os.path.join(root, file))
+
+    return file_list
+
+def extract_putfiles_paths(makefile_content):
+    putfiles_paths = []
+
+    pattern = re.compile(r'(\S+)_PUTFILES\s*\+?=\s*(.*)')
+    
+    for line in makefile_content:
+        match = pattern.match(line)
+        if match:
+            target = match.group(1)
+            file_paths = match.group(2).split()
+            full_paths = [path for path in file_paths]
+            for i in range(len(full_paths)):
+                if ("sample.txt" in full_paths[i]):
+                    full_paths[i] = "../../" + full_paths[i]
+            putfiles_paths.append((target, full_paths))
+
+    return putfiles_paths
+
+def main():
+    # Check the number of command line arguments
+    if len(sys.argv) != 5:
+        print(f"Usage: {sys.argv[0]} <project> <exec_path> <workspace_path> <task_name>")
+        sys.exit(-1)
+
+    # Command line arguments
+    exec_path = sys.argv[1]
+    project = sys.argv[2]
+    ws_path = sys.argv[3]
+    task_name = sys.argv[4]
+    filename = exec_path.split("/")[-1]
+    dependencies_dict = defaultdict(list)
+
+    # Find Makefile paths
+    makefile_paths = find_file(ws_path, "Make.tests")
+    for makefile_path in makefile_paths: 
+        with open(makefile_path, 'r') as file:
+            makefile_content = file.readlines()
+
+        # Extract putfiles paths from Makefile
+        putfiles_paths = extract_putfiles_paths(makefile_content)
+        for target, file_paths in putfiles_paths:
+            dependencies_dict[target].extend(file_paths)
+
+    # Get dependencies for the given exec_path
+    dependency = dependencies_dict.get(exec_path)
+
+    # Build the command line arguments
+    args = ["--gdb", "-m 20","--fs-disk=10", "--swap-disk=4", "-p", f"{exec_path}:{filename}"]
+    if dependency:
+        for dep in dependency:
+            dep_name = dep.split("/")[-1]
+            args.extend(["-p", f"{dep}:{dep_name}"])
+    args.extend(["--", "-q", "-f", "run", f"{filename} "r"${input:args}"])
+
+    # Print the final command line arguments
+    print(args)
+
+    # Update tasks.json configuration file
+    config_path = os.path.join(ws_path, ".vscode/tasks.json")
+    with open(config_path, "r") as config_file:
+        config = json.load(config_file)
+
+    # Update the specified task with the new arguments
+    success = False
+    for task in config["tasks"]:
+        if task["label"] == task_name:
+            task["args"] = args
+            success = True
+            break
+
+    # Exit if the specified task is not found
+    if not success:
+        print("Error: Task not found in tasks.json")
+        sys.exit(-1)
+
+    # Write the updated configuration back to the file
+    with open(config_path, "w") as config_file:
+        json.dump(config, config_file, indent=4)
+
+    sys.exit(0)
+
+if __name__ == "__main__":
+    main()

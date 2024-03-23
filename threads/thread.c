@@ -236,7 +236,7 @@ tid_t thread_create(const char *name, int priority, thread_func *function, void 
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
 
-	t->fdt = palloc_get_multiple(PAL_ZERO & PAL_ASSERT, FDT_PAGES);
+	t->fdt = palloc_get_multiple(PAL_ZERO | PAL_ASSERT, FDT_PAGES);
 	if (t->fdt == NULL)
 	{
 		palloc_free_page(t);
@@ -362,8 +362,11 @@ void thread_yield(void)
 }
 
 void thread_try_yield(void) {
-	if (!list_empty(&ready_list) && thread_current() != idle_thread && !intr_context())
-		thread_yield();
+	if (!list_empty(&ready_list) && thread_current() != idle_thread) {
+		if (list_entry(list_front(&ready_list), struct thread, elem)->priority > thread_current()->priority) {
+			thread_yield();
+		}
+	}
 }
 
 /* thread_set_priority - 현재 스레드의 우선순위를 새로운 우선순위로 설정하고,
@@ -567,6 +570,7 @@ static void init_thread(struct thread *t, const char *name, int priority)
 	list_init(&t->child_list);
 	sema_init(&t->load_sema, 0);
 	sema_init(&t->wait_sema, 0);
+	sema_init(&t->exit_sema, 0);
 	t->exit_status = 0;
 
 	if (strcmp(name, "idle"))

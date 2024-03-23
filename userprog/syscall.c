@@ -53,6 +53,7 @@ static struct intr_frame *frame;
 
 void
 syscall_init (void) {
+	lock_init(&filesys_lock);
 	write_msr(MSR_STAR, ((uint64_t)SEL_UCSEG - 0x10) << 48  |
 			((uint64_t)SEL_KCSEG) << 32);
 	write_msr(MSR_LSTAR, (uint64_t) syscall_entry);
@@ -220,7 +221,10 @@ bool create(const char *file, unsigned initial_size) {
  */
 bool remove(const char *file) {
 	check_address(file);
-	return filesys_remove(file);
+	lock_acquire(&filesys_lock);
+	bool success = filesys_remove(file);
+	lock_release(&filesys_lock);
+	return success;
 }
 
 /* open - file이라는 파일을 연다.
@@ -244,14 +248,17 @@ bool remove(const char *file) {
  */
 int open(const char *file) {
 	check_address(file);
+	lock_acquire(&filesys_lock);
 	struct file *file_open = filesys_open(file);
-	if (file_open == NULL)
+	if (file_open == NULL){
+		lock_release(&filesys_lock);
 		return -1;
+	}
 
 	int fd = add_file_to_fdt(file_open);
 	if (fd == -1)
 		file_close(file_open);
-
+	lock_release(&filesys_lock);
 	return fd;
 }
 
@@ -285,7 +292,10 @@ int read(int fd, void *buffer, unsigned size) {
 		while (byte < size) {
 			_buffer[byte++] = input_getc();
 		}
-		return byte;
+		lock_acquire(&filesys_lock);
+		int byte_ = file_read(_file, buffer, size);
+		lock_release(&filesys_lock);
+		return byte_;
 	}
 
 	return file_read(_file, buffer, size);
@@ -312,7 +322,10 @@ int write(int fd, const void *buffer, unsigned size) {
 		if (_file == NULL) {
 			return -1;
 		}
-		return file_write(_file, buffer, size);
+		lock_acquire(&filesys_lock);
+		int byte = file_write(_file, buffer, size);
+		lock_release(&filesys_lock);
+		return byte;
 	}	
 }
 

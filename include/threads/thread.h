@@ -133,6 +133,7 @@ struct thread {
 	struct intr_frame parent_if; // parent intr_frame
 	struct semaphore load_sema; // load semaphore
 	struct semaphore wait_sema; // wait semaphore
+	struct semaphore exit_sema; // exit semaphore
 	struct file *self_file; // self file
 };
 
