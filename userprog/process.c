@@ -145,6 +145,7 @@ static bool duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	if (!pml4_set_page (current->pml4, va, newpage, writable)) {
 		/* 6. TODO: if fail to insert page, do error handling. */
 		/* 해석: 페이지 삽입에 실패하면 오류 처리를 수행하십시오. */
+		palloc_free_page(newpage);
 		return false;
 	}
 	return true;
@@ -190,11 +191,11 @@ __do_fork (void *aux) {
 	int idx = 2;
 	current->fdt[0] = parent->fdt[0];
 	current->fdt[1] = parent->fdt[1];
-	while (idx < FDT_SIZE) {
-		if (parent->fdt[idx] != NULL) {
-			current->fdt[idx] = file_duplicate(parent->fdt[idx]);
+	for (int idx = 2; idx < FDT_SIZE; idx++) {
+		struct file *f = parent->fdt[idx];
+		if (f != NULL) {
+			current->fdt[idx] = file_duplicate(f);
 		}
-		idx++;
 	}
 	if_.R.rax = 0; // 자식 프로세스의 반환 값은 0
 	sema_up(&current->load_sema);
@@ -284,20 +285,17 @@ void process_exit (void) {
 	 * 프로세스가 종료되는 경우 모든 파일을 암시적으로 닫는다.
 	 */
 
-	// int fd = 2;
-	// while (fd < FDT_SIZE) {
-	// 	if (t->fdt[fd] != NULL)
-	// 		close(fd);
-	// 	fd++;
-	// }fo
 	// 스레드의 파일 닫기
 	file_close(t->self_file);
-	for (int i = 0; i < FDT_SIZE; i++) {
-    	t->fdt[i] = NULL;
+	for (int fd = 2; fd < FDT_SIZE; fd++) {
+		if (t->fdt[fd] != NULL) {
+			close(fd);
+		}
 	}
-	process_cleanup ();
+	palloc_free_multiple(t->fdt, FDT_PAGES);
 	sema_up(&t->wait_sema);
 	sema_down(&t->exit_sema);
+	process_cleanup ();
 }
 
 /* Free the current process's resources. */

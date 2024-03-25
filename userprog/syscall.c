@@ -359,7 +359,7 @@ void close(int fd) {
 	}
 	else {
 		file_close(_file);
-		remove_file_from_fdt(fd);
+		thread_current()->fdt[fd] = NULL;
 	}
 }
 
@@ -369,10 +369,10 @@ void check_address(uintptr_t addr) {
 	if (addr == NULL) {
 		exit(-1);
 	}
-	if (pml4_get_page(thread_current()->pml4, (void *)addr) == NULL) {
+	if (!is_user_vaddr(addr)) {
 		exit(-1);
 	}
-	if (!is_user_vaddr(addr)) {
+	if (pml4_get_page(thread_current()->pml4, (void *)addr) == NULL) {
 		exit(-1);
 	}
 

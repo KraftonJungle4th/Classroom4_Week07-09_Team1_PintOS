@@ -236,7 +236,8 @@ tid_t thread_create(const char *name, int priority, thread_func *function, void 
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
 
-	t->fdt = palloc_get_multiple(PAL_ZERO | PAL_ASSERT, FDT_PAGES);
+	//t->fdt = palloc_get_multiple(PAL_ZERO | PAL_ASSERT, FDT_PAGES);
+	t->fdt = (struct file **)palloc_get_multiple(PAL_ZERO, FDT_PAGES);
 	if (t->fdt == NULL)
 	{
 		palloc_free_page(t);
@@ -250,8 +251,8 @@ tid_t thread_create(const char *name, int priority, thread_func *function, void 
     	t->fdt[i] = NULL;
 	}
 
-	t->fdt[0] = 1;
-	t->fdt[1] = 2;
+	t->fdt[0] = 0;
+	t->fdt[1] = 1;
 	// 현재 스레드의 자식으로 추가
 	list_push_back(&thread_current()->child_list, &t->child_elem);
 
